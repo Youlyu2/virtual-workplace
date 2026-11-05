@@ -1,0 +1,21 @@
+build/
+.DS_Store
+*.xcuserstate
+.build/
+.swiftpm/
+xcuserdata/
+
+# Local configuration, credentials and runtime state.
+.env
+.env.*
+!.env.example
+/state.json
+/world-settings.json
+/pending-notes.json
+/Backups/
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.p12
+*.p8
