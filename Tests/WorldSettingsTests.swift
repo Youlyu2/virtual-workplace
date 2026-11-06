@@ -27,7 +27,8 @@ enum WorldSettingsTests {
         let legacyData = Data("{\"weather\":\"rain\",\"timeMode\":\"sunset\",\"displayScenes\":{\"legacy-display\":\"outdoors\"}}".utf8)
         let legacy = try JSONDecoder().decode(SceneWorld.self, from: legacyData)
         expect(legacy.displayScenes == ["legacy-display": .outdoors] && legacy.screenSaverDisplayScenes.isEmpty
-               && legacy.weather == .rain && legacy.weatherMode == .random && legacy.timeMode == .sunset,
+               && legacy.weather == .rain && legacy.weatherMode == .random
+               && legacy.timeMode == .sunset && legacy.theme == .cabin,
                "legacy files retain desktop choices without copying them into saver preferences")
         let migrated = try JSONDecoder().decode(SceneWorld.self, from: JSONEncoder().encode(legacy))
         expect(migrated == legacy, "legacy preference migration is lossless on its next save")
@@ -108,7 +109,7 @@ enum WorldSettingsTests {
         rejects("missing preferences") { _ = try preferences.read() }
         let chosen = SceneWorld(weather: .rain, weatherMode: .manual, timeMode: .sunset,
             displayScenes: ["left-display-uuid": .outdoors, "main-display-uuid": .room],
-            screenSaverDisplayScenes: ["left-display-uuid": .room, "main-display-uuid": .outdoors])
+            screenSaverDisplayScenes: ["left-display-uuid": .room, "main-display-uuid": .outdoors], theme: .underwater)
         try preferences.write(chosen)
         let firstLoad = try preferences.read()
         expect(firstLoad == chosen, "all display scenes and shared environment survive atomic persistence")
@@ -199,12 +200,14 @@ enum WorldSettingsTests {
         var legacyWorldJSON = legacySnapshotJSON["world"] as! [String: Any]
         legacyWorldJSON.removeValue(forKey: "screenSaverDisplayScenes")
         legacyWorldJSON.removeValue(forKey: "weatherMode")
+        legacyWorldJSON.removeValue(forKey: "theme")
         legacySnapshotJSON["world"] = legacyWorldJSON
         try JSONSerialization.data(withJSONObject: legacySnapshotJSON).write(to: stateStore.url)
         let oldWorldSnapshot = try stateStore.read()
         expect(oldWorldSnapshot.world?.displayScenes == chosen.displayScenes
                && oldWorldSnapshot.world?.screenSaverDisplayScenes.isEmpty == true
                && oldWorldSnapshot.world?.weatherMode == .random
+               && oldWorldSnapshot.world?.theme == .cabin
                && oldWorldSnapshot.tasks == snapshot.tasks,
                "legacy shared snapshots preserve tasks and desktop choices without populating saver choices")
         snapshot.world = tooMany

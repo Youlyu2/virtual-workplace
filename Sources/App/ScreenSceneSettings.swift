@@ -54,6 +54,12 @@ final class ScreenSceneSettingsController: NSObject {
     private var pendingNotes: [PendingNote] = []
     private var displayContext: SceneDisplayContext = .desktop
     private var displayRows: NSStackView?
+    private var themePicker: NSSegmentedControl?
+    private var environmentHeading: NSTextField?
+    private var environmentHelp: NSTextField?
+    private var weatherHeading: NSTextField?
+    private var weatherModeHeading: NSTextField?
+    private var lightHeading: NSTextField?
     private var contextPicker: NSSegmentedControl?
     private var contextExplanation: NSTextField?
     private var resetButton: NSButton?
@@ -118,7 +124,7 @@ final class ScreenSceneSettingsController: NSObject {
         let nextNotes = snapshot.pendingNotes ?? []
         let worldChanged = world != nextWorld
         let changed = worldChanged || pendingNotes != nextNotes
-        let layoutChanged = world.displayScenes != nextWorld.displayScenes
+        let layoutChanged = world.theme != nextWorld.theme || world.displayScenes != nextWorld.displayScenes
             || world.screenSaverDisplayScenes != nextWorld.screenSaverDisplayScenes
         world = nextWorld
         pendingNotes = nextNotes
@@ -191,7 +197,7 @@ final class ScreenSceneSettingsController: NSObject {
             body.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -24)
         ])
         body.addArrangedSubview(label("屏幕场景", size: 23, weight: .semibold))
-        body.addArrangedSubview(label("桌面背景与系统屏保分别配置，天气与昼夜统一同步。", size: 12, color: Self.secondary))
+        body.addArrangedSubview(label("选择主题，再为桌面与屏保的每块屏幕配置场景。", size: 12, color: Self.secondary))
 
         let contextControls = NSStackView()
         contextControls.orientation = .vertical
@@ -204,7 +210,16 @@ final class ScreenSceneSettingsController: NSObject {
         picker.identifier = NSUserInterfaceItemIdentifier("scene-context")
         picker.setAccessibilityLabel("背景配置范围")
         picker.toolTip = "分别设置桌面背景和系统屏保的每块屏幕；切换不会更改配置"
-        contextControls.addArrangedSubview(picker)
+        let theme = NSSegmentedControl(labels: WorkplaceTheme.allCases.map(\.title),
+            trackingMode: .selectOne, target: self, action: #selector(themeChanged(_:)))
+        theme.segmentStyle = .rounded
+        theme.identifier = NSUserInterfaceItemIdentifier("scene-theme")
+        theme.setAccessibilityLabel("场景主题")
+        themePicker = theme
+        let switches = NSStackView(views: [theme, picker])
+        switches.orientation = .horizontal
+        switches.spacing = 16
+        contextControls.addArrangedSubview(switches)
         contextPicker = picker
         let contextHelp = label("", size: 11, color: Self.secondary)
         contextControls.addArrangedSubview(contextHelp)
@@ -236,12 +251,16 @@ final class ScreenSceneSettingsController: NSObject {
         divider.boxType = .separator
         body.addArrangedSubview(divider)
         divider.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-        body.addArrangedSubview(label("共用的天气与时间", size: 16, weight: .semibold))
+        let environmentTitle = label("", size: 16, weight: .semibold)
+        environmentHeading = environmentTitle
+        body.addArrangedSubview(environmentTitle)
         let environmentRow = NSStackView()
         environmentRow.orientation = .horizontal
         environmentRow.spacing = 10
         environmentRow.alignment = .centerY
-        environmentRow.addArrangedSubview(label("手动天气", size: 12))
+        let weatherTitle = label("", size: 12)
+        weatherHeading = weatherTitle
+        environmentRow.addArrangedSubview(weatherTitle)
         let weather = NSPopUpButton(frame: .zero, pullsDown: false)
         weather.identifier = NSUserInterfaceItemIdentifier("shared-weather")
         weather.addItems(withTitles: weatherOptions.map(\.title))
@@ -252,7 +271,9 @@ final class ScreenSceneSettingsController: NSObject {
         let gap = NSView()
         gap.widthAnchor.constraint(equalToConstant: 12).isActive = true
         environmentRow.addArrangedSubview(gap)
-        environmentRow.addArrangedSubview(label("昼夜", size: 12))
+        let lightTitle = label("", size: 12)
+        lightHeading = lightTitle
+        environmentRow.addArrangedSubview(lightTitle)
         let time = NSPopUpButton(frame: .zero, pullsDown: false)
         time.identifier = NSUserInterfaceItemIdentifier("shared-time")
         time.addItems(withTitles: timeOptions.map(\.title))
@@ -263,13 +284,16 @@ final class ScreenSceneSettingsController: NSObject {
         weatherPopup = weather; timePopup = time
         body.addArrangedSubview(environmentRow)
         let explanation = label("桌面与屏保共用天气和时间。自动昼夜跟随本机时间，房间窗户与窗外风景同步。", size: 11, color: Self.secondary)
+        environmentHelp = explanation
         explanation.maximumNumberOfLines = 2
         body.addArrangedSubview(explanation)
         explanation.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
 
         let modeRow = NSStackView()
         modeRow.orientation = .horizontal; modeRow.spacing = 10; modeRow.alignment = .centerY
-        modeRow.addArrangedSubview(label("天气模式", size: 12))
+        let modeTitle = label("", size: 12)
+        weatherModeHeading = modeTitle
+        modeRow.addArrangedSubview(modeTitle)
         let mode = NSPopUpButton(frame: .zero, pullsDown: false)
         mode.identifier = NSUserInterfaceItemIdentifier("weather-mode")
         mode.addItems(withTitles: ["随机轮换", "手动固定"])
@@ -343,7 +367,7 @@ final class ScreenSceneSettingsController: NSObject {
             preview.viewport = DisplaySceneRouting.viewport(for: display, among: displays, world: world, context: displayContext)
             preview.world = world; preview.pendingNotes = pendingNotes; preview.referenceDate = now
             preview.identifier = NSUserInterfaceItemIdentifier("scene-preview:\(display.id)")
-            preview.setAccessibilityLabel("\(displayContext.title) · \(display.name)：\(preview.background.title)")
+            preview.setAccessibilityLabel("\(displayContext.title) · \(display.name)：\(world.theme.title(for: preview.background))")
             preview.widthAnchor.constraint(equalToConstant: 160).isActive = true
             preview.heightAnchor.constraint(equalToConstant: 90).isActive = true
             row.addArrangedSubview(preview)
@@ -363,7 +387,7 @@ final class ScreenSceneSettingsController: NSObject {
             popup.displayContext = displayContext
             popup.identifier = NSUserInterfaceItemIdentifier("screen-background:\(display.id)")
             for background in [WorkplaceBackground.room, .outdoors] {
-                popup.addItem(withTitle: background.title)
+                popup.addItem(withTitle: world.theme.title(for: background))
                 popup.lastItem?.representedObject = background.rawValue
             }
             popup.selectItem(at: preview.background == .room ? 0 : 1)
@@ -380,17 +404,38 @@ final class ScreenSceneSettingsController: NSObject {
     }
 
     private func refreshControls(rebuildRows: Bool) {
+        let theme = world.theme
+        let underwater = theme == .underwater
+        let primary = theme.title(for: WorkplaceBackground.room)
+        let alternate = theme.title(for: WorkplaceBackground.outdoors)
+        themePicker?.selectedSegment = WorkplaceTheme.allCases.firstIndex(of: theme) ?? 0
         contextPicker?.selectedSegment = SceneDisplayContext.allCases.firstIndex(of: displayContext) ?? 0
         switch displayContext {
         case .desktop:
-            contextExplanation?.stringValue = "桌面背景：默认每块屏幕都显示房间，可单独改为窗外。"
+            contextExplanation?.stringValue = "桌面背景：默认每块屏幕都显示\(primary)，可单独改为\(alternate)。"
             resetButton?.title = "恢复桌面布局"
-            resetButton?.toolTip = "仅恢复桌面背景：每块屏幕显示房间。保留系统屏保、天气与昼夜配置。"
+            resetButton?.toolTip = "仅恢复桌面背景：每块屏幕显示\(primary)。保留系统屏保和环境配置。"
         case .screenSaver:
-            contextExplanation?.stringValue = "系统屏保：默认主屏显示房间，其他屏幕显示窗外。"
+            contextExplanation?.stringValue = "系统屏保：默认主屏显示\(primary)，其他屏幕显示\(alternate)。"
             resetButton?.title = "恢复屏保布局"
-            resetButton?.toolTip = "仅恢复系统屏保：主屏显示房间，其他屏幕显示窗外。保留桌面背景、天气与昼夜配置。"
+            resetButton?.toolTip = "仅恢复系统屏保：主屏显示\(primary)，其他屏幕显示\(alternate)。保留桌面背景和环境配置。"
         }
+        environmentHeading?.stringValue = underwater ? "共用的海况与光照" : "共用的天气与时间"
+        weatherHeading?.stringValue = underwater ? "手动海况" : "手动天气"
+        lightHeading?.stringValue = underwater ? "光照" : "昼夜"
+        environmentHelp?.stringValue = underwater
+            ? "桌面与屏保共用海况和光照。自动光照随本机时间调整水下亮度，深海始终更暗。"
+            : "桌面与屏保共用天气和时间。自动昼夜跟随本机时间，房间窗户与窗外风景同步。"
+        weatherPopup?.setAccessibilityLabel(underwater ? "全部屏幕的手动海况" : "全部屏幕的手动天气")
+        timePopup?.setAccessibilityLabel(underwater ? "全部屏幕的光照" : "全部屏幕的昼夜")
+        for (index, option) in weatherOptions.enumerated() {
+            weatherPopup?.item(at: index)?.title = theme.title(for: option)
+        }
+        for (index, option) in timeOptions.enumerated() {
+            timePopup?.item(at: index)?.title = theme.title(for: option)
+        }
+        weatherModeHeading?.stringValue = underwater ? "海况模式" : "天气模式"
+        weatherModePopup?.setAccessibilityLabel(underwater ? "全部屏幕的海况模式" : "全部屏幕的天气模式")
         weatherPopup?.selectItem(at: weatherOptions.firstIndex(of: world.weather) ?? 0)
         timePopup?.selectItem(at: timeOptions.firstIndex(of: world.timeMode) ?? 0)
         weatherModePopup?.selectItem(at: weatherModes.firstIndex(of: world.weatherMode) ?? 0)
@@ -400,9 +445,9 @@ final class ScreenSceneSettingsController: NSObject {
         refreshPreviews(force: rebuildRows)
     }
 
-    private func publish() {
+    private func publish(rebuildRows: Bool = false) {
         clearSaveError()
-        refreshControls(rebuildRows: false)
+        refreshControls(rebuildRows: rebuildRows)
         refreshPreviews(force: true)
         onChange?(world)
     }
@@ -427,22 +472,28 @@ final class ScreenSceneSettingsController: NSObject {
             if let display = descriptors.first(where: { $0.id == id }) {
                 preview.background = DisplaySceneRouting.background(for: display, among: descriptors, world: world, context: displayContext)
                 preview.viewport = DisplaySceneRouting.viewport(for: display, among: descriptors, world: world, context: displayContext)
-                preview.setAccessibilityLabel("\(displayContext.title) · \(display.name)：\(preview.background.title)")
-                preview.setAccessibilityValue("当前天气：\(effectiveWeather.title)")
+                preview.setAccessibilityLabel("\(displayContext.title) · \(display.name)：\(world.theme.title(for: preview.background))")
+                let condition = world.theme == .underwater ? "海况" : "天气"
+                preview.setAccessibilityValue("当前\(condition)：\(world.theme.title(for: effectiveWeather))")
             }
         }
     }
 
     private func refreshWeatherExplanation(at date: Date) {
-        let current = weatherSnapshot(at: date).effectiveWorld(at: date).weather
+        let underwater = world.theme == .underwater
+        let current = world.theme.title(for: weatherSnapshot(at: date).effectiveWorld(at: date).weather)
         let message: String
         if world.weatherMode == .random {
-            weatherExplanation?.stringValue = "每45分钟进入一个随机天气时段，晴天为主，偶尔下雨、下雪或雷雨。\n天气不受待办等待时长影响，所有屏幕保持同步。"
+            weatherExplanation?.stringValue = underwater
+                ? "每45分钟轮换海况。海况不受待办等待时长影响，所有屏幕保持同步。"
+                : "每45分钟进入一个随机天气时段，晴天为主，偶尔下雨、下雪或雷雨。\n天气不受待办等待时长影响，所有屏幕保持同步。"
             let next = RandomWeatherPolicy.nextChange(after: date).map { " · 下一时段 \(Self.weatherClock.string(from: $0))" } ?? ""
-            message = "当前显示：\(current.title) · 随机轮换\(next)"
+            message = "当前显示：\(current) · 随机轮换\(next)"
         } else {
-            weatherExplanation?.stringValue = "固定显示你选择的天气。切回随机轮换时仍保留手动选择。\n房间窗户、窗外与屏保共用同一份天气。"
-            message = "当前显示：\(current.title) · 手动固定"
+            weatherExplanation?.stringValue = underwater
+                ? "固定显示你选择的海况。切回随机轮换时仍保留手动选择。"
+                : "固定显示你选择的天气。切回随机轮换时仍保留手动选择。\n房间窗户、窗外与屏保共用同一份天气。"
+            message = "当前显示：\(current) · 手动固定"
         }
         weatherStatus?.stringValue = message
         weatherStatus?.toolTip = message
@@ -456,6 +507,12 @@ final class ScreenSceneSettingsController: NSObject {
         scenes[sender.displayIdentity] = background
         world.setDisplayScenes(scenes, for: displayContext)
         publish()
+    }
+    @objc private func themeChanged(_ sender: NSSegmentedControl) {
+        let themes = WorkplaceTheme.allCases
+        guard themes.indices.contains(sender.selectedSegment) else { return }
+        world.theme = themes[sender.selectedSegment]
+        publish(rebuildRows: true)
     }
     @objc private func contextChanged(_ sender: NSSegmentedControl) {
         guard SceneDisplayContext.allCases.indices.contains(sender.selectedSegment) else { return }

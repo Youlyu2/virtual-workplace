@@ -40,9 +40,34 @@ struct SceneFrame {
     var screens: [(WorkplaceTask, CGFloat)]
 }
 
+/// Clock and progress use the same data on land and underwater.
+enum SceneReadouts {
+    private static let dateFormat: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 EEEE"; return f
+    }()
+    private static let timeFormat: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "HH:mm"; return f
+    }()
+
+    static func dateText(at date: Date) -> String { dateFormat.string(from: date) }
+    static func timeText(at date: Date) -> String { timeFormat.string(from: date) }
+
+    static func todayProgress(_ snapshot: SceneSnapshot, at date: Date) -> [(label: String, count: Int)] {
+        let completed = snapshot.summaryDay.map { Calendar.current.isDate($0, inSameDayAs: date) } == true
+            ? snapshot.completedToday ?? 0 : 0
+        return [
+            ("工作中", snapshot.isFresh(at: date) ? snapshot.tasks.filter { $0.status == .running }.count : 0),
+            ("等待确认", snapshot.tasks.filter { $0.status == .waiting }.count),
+            ("需处理", snapshot.tasks.filter { $0.status == .failed }.count),
+            ("已完成", completed)
+        ]
+    }
+}
+
 /// Both the app and the system screen saver use the same rear-view composition.
 enum SceneRenderer {
     static var hasRoomAssets: Bool { RoomAssets.isAvailable && PixelEmployee.hasSprites }
+    static var hasUnderwaterAssets: Bool { RoomAssets.shallowSea != nil && RoomAssets.deepSea != nil }
     static var hasOutdoorAssets: Bool { OutdoorWorkplaceScene.isAvailable }
 
     /// The window opening keeps the physical display's camera even in a small
@@ -66,11 +91,31 @@ enum SceneRenderer {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: c, flipped: false)
         let worldViewport = viewport ?? WorldViewport.companion(for: background)
+        let world = snapshot.world ?? SceneWorld()
+        let underwater = world.theme == .underwater
+        let pendingAlert = underwater && world.pendingWeatherEnabled && (snapshot.pendingNotes ?? []).contains {
+            let age = now.timeIntervalSince($0.createdAt)
+            return age.isFinite && age >= world.pendingWeatherPace.cloudyAfter
+        }
         if background == .outdoors {
-            OutdoorWorkplaceScene.draw(in: c, bounds: bounds, world: snapshot.world ?? SceneWorld(),
-                                       at: now, reduceMotion: reduceMotion, viewport: worldViewport)
+            if underwater {
+                UnderwaterWorkplaceScene.draw(in: c, bounds: bounds, deep: true, world: world,
+                                             at: now, reduceMotion: reduceMotion, animationOffset: worldViewport.animationOffset)
+                UnderwaterWorkplaceScene.badge(in: c, bounds: bounds, deep: true, world: world, pendingAlert: pendingAlert)
+            } else {
+                OutdoorWorkplaceScene.draw(in: c, bounds: bounds, world: world,
+                                           at: now, reduceMotion: reduceMotion, viewport: worldViewport)
+            }
             PendingNoteVisitors.draw(in: c, bounds: bounds, notes: snapshot.pendingNotes ?? [],
-                                     world: snapshot.world ?? SceneWorld(), at: now, reduceMotion: reduceMotion)
+                                     world: world, at: now, reduceMotion: reduceMotion)
+            NSGraphicsContext.restoreGraphicsState()
+            c.restoreGState()
+            return
+        }
+        if underwater {
+            ShallowDiveScene.draw(in: c, bounds: bounds, snapshot: snapshot, world: world,
+                                  at: now, reduceMotion: reduceMotion, animationOffset: worldViewport.animationOffset,
+                                  pendingAlert: pendingAlert)
             NSGraphicsContext.restoreGraphicsState()
             c.restoreGState()
             return

@@ -21,9 +21,10 @@ struct WorldViewport: Equatable {
     let canvas: CGRect
     let display: CGRect
     let seams: [WorldSeam]
+    let animationOffset: TimeInterval
 
-    init?(canvas: CGRect, display: CGRect, seams: [WorldSeam] = []) {
-        guard Self.valid(canvas), Self.valid(display),
+    init?(canvas: CGRect, display: CGRect, seams: [WorldSeam] = [], animationOffset: TimeInterval = 0) {
+        guard Self.valid(canvas), Self.valid(display), animationOffset.isFinite,
               canvas.insetBy(dx: -0.001, dy: -0.001).contains(display),
               seams.count <= 128, seams.allSatisfy({ seam in
                   seam.isValid && seam.boundaryX >= canvas.minX - 0.001
@@ -33,13 +34,15 @@ struct WorldViewport: Equatable {
         self.canvas = canvas
         self.display = display
         self.seams = seams
+        self.animationOffset = animationOffset
     }
 
-    static func make(display: CGRect, among displays: [CGRect], seams: [WorldSeam] = []) -> WorldViewport? {
+    static func make(display: CGRect, among displays: [CGRect], seams: [WorldSeam] = [],
+                     animationOffset: TimeInterval = 0) -> WorldViewport? {
         guard !displays.isEmpty, displays.allSatisfy(valid), valid(display),
               displays.contains(display) else { return nil }
         let canvas = displays.dropFirst().reduce(displays[0]) { $0.union($1) }
-        return WorldViewport(canvas: canvas, display: display, seams: seams)
+        return WorldViewport(canvas: canvas, display: display, seams: seams, animationOffset: animationOffset)
     }
 
     /// Offscreen exports have no physical target. Keep a deterministic pair so

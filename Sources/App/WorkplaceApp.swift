@@ -91,6 +91,8 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
     private var currentAction: SceneAction?
     private let ambientMotion = AmbientEmployeeMotion()
     private var ambientActionsEnabled = false
+    private var actionButtons: [EmployeeAction: ActionButton] = [:]
+    private var walkMenuItem: NSMenuItem?
     private var actionStatusLabel: NSTextField!
     private var stopActionButton: ActionButton!
 
@@ -224,12 +226,14 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         captureItem.keyEquivalentModifierMask = [.control, .option, .command]
         captureItem.target = self
         viewMenu.addItem(withTitle: "进入全屏", action: #selector(toggleFullScreen), keyEquivalent: "f").target = self
-        viewMenu.addItem(withTitle: "屏幕场景与天气…", action: #selector(openSceneSettings), keyEquivalent: ",").target = self
+        viewMenu.addItem(withTitle: "屏幕场景与环境…", action: #selector(openSceneSettings), keyEquivalent: ",").target = self
         let wallpaperItem = viewMenu.addItem(withTitle: "设为桌面背景", action: #selector(toggleWallpaper), keyEquivalent: "")
         wallpaperItem.target = self
         wallpaperMenuItems.append(wallpaperItem)
         viewMenu.addItem(.separator())
-        viewMenu.addItem(withTitle: "溜达一圈", action: #selector(takeWalk), keyEquivalent: "").target = self
+        let walk = viewMenu.addItem(withTitle: "溜达一圈", action: #selector(takeWalk), keyEquivalent: "")
+        walk.target = self
+        walkMenuItem = walk
         viewMenu.addItem(withTitle: "安装系统屏保…", action: #selector(installScreenSaver), keyEquivalent: "").target = self
         viewMenu.addItem(withTitle: "打开壁纸与屏保设置", action: #selector(openScreenSaverSettings), keyEquivalent: "").target = self
         viewItem.submenu = viewMenu
@@ -382,6 +386,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
                 button.heightAnchor.constraint(equalToConstant: 24).isActive = true
                 button.setAccessibilityLabel(kind.title)
                 button.toolTip = "播放\(kind.title)动作，结束后恢复原状态"
+                actionButtons[kind] = button
                 row.addArrangedSubview(button)
             }
             actions.addArrangedSubview(row)
@@ -475,7 +480,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         let demo = menu.addItem(withTitle: "播放 / 停止演示", action: #selector(toggleDemo), keyEquivalent: "")
         demo.target = self
         menu.addItem(withTitle: "使用 Codex 实时任务", action: #selector(useLiveTasks), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "屏幕场景与天气…", action: #selector(openSceneSettings), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "屏幕场景与环境…", action: #selector(openSceneSettings), keyEquivalent: "").target = self
         let settings = menu.addItem(withTitle: "壁纸与屏保设置", action: #selector(openScreenSaverSettings), keyEquivalent: "")
         settings.target = self
         let immersive = menu.addItem(withTitle: "进入沉浸全屏", action: #selector(toggleFullScreen), keyEquivalent: "")
@@ -590,23 +595,47 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         presentation.update(snapshot)
         sceneSettings.update(snapshot: snapshot)
         let pendingCount = snapshot.pendingNotes?.count ?? 0
-        notesButton?.title = "门外待办 \(pendingCount)" + (notesError == nil ? "" : " !")
+        let theme = world.theme
+        let underwater = theme == .underwater
+        let notesTitle = theme.notesTitle
+        notesButton?.title = "\(notesTitle) \(pendingCount)" + (notesError == nil ? "" : " !")
         notesButton?.toolTip = notesError ?? (quickNoteHotKey.isRegistered
             ? "\(QuickNoteHotKey.displayShortcut) 快速记录 · ⌘↩ 添加访客"
             : "全局快捷键被占用或无法注册；请用 ⌘2 打开待办，⌘↩ 添加")
-        for item in notesMenuItems { item.title = "门外待办（\(pendingCount)）" }
+        for item in notesMenuItems { item.title = "\(notesTitle)（\(pendingCount)）" }
         notesPanel.update(snapshot: snapshot, error: notesError, canUndo: notesInbox?.canUndo ?? false)
-        let modes: [EmployeeMode] = [.automatic, .sitting, .slacking, .standing]
-        modePicker.selectedSegment = modes.firstIndex(of: snapshot.mode) ?? 0
+        let modes = modeChoices
+        if modePicker.segmentCount != modes.count { modePicker.segmentCount = modes.count }
+        for (index, mode) in modes.enumerated() where modePicker.label(forSegment: index) != mode.1 {
+            modePicker.setLabel(mode.1, forSegment: index)
+            modePicker.setWidth(!underwater && index == 0 ? 58 : 90, forSegment: index)
+        }
+        modePicker.selectedSegment = modes.firstIndex { $0.0 == snapshot.mode } ?? 0
+        for (action, button) in actionButtons {
+            let title = theme.title(for: action)
+            guard button.title != title else { continue }
+            button.title = title
+            button.setAccessibilityLabel(title)
+            button.toolTip = "播放\(title)动作，结束后恢复原状态"
+            if action == .coffee || action == .playWithCat {
+                let symbol = underwater ? (action == .coffee ? "bubbles.and.sparkles.fill" : "heart.fill")
+                    : (action == .coffee ? "cup.and.saucer.fill" : "cat.fill")
+                button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            }
+        }
+        walkMenuItem?.title = theme.title(for: EmployeeAction.walk)
         sourcePicker.selectedSegment = usesLiveSource ? 0 : 1
-        sourceHint.stringValue = usesLiveSource ? (liveSource?.connectionMessage ?? "正在连接 Codex…") : "基础三屏，随任务扩展。\n模拟任务仅用于查看效果。"
+        let demoHint = underwater ? "任务会显示在水中的潜水艇上。\n模拟任务仅用于查看效果。"
+            : "基础三屏，随任务扩展。\n模拟任务仅用于查看效果。"
+        sourceHint.stringValue = usesLiveSource ? (liveSource?.connectionMessage ?? "正在连接 Codex…") : demoHint
         sourceHint.toolTip = sourceHint.stringValue
         sourceFootnote.stringValue = usesLiveSource ? "本机与开发机 · 只读同步\n关闭窗口后，菜单栏继续运行" : "模拟任务 · 无需联网\n关闭窗口后，菜单栏继续运行"
         sourceMenuTitle?.title = usesLiveSource ? "虚拟工位 · Codex 实时" : "虚拟工位 · 模拟任务"
         if usesLiveSource {
             let total = liveSource?.totalSessionCount ?? snapshot.tasks.count
             taskCount.stringValue = total > snapshot.tasks.count ? "会话  \(snapshot.tasks.count) / \(total) · 显示前六" : "Codex  \(total) 个会话"
-            taskCount.toolTip = "按真实会话同步；最多同时显示六块任务屏。"
+            taskCount.toolTip = underwater ? "按真实会话同步，最多同时显示六艘任务潜水艇。"
+                : "按真实会话同步；最多同时显示六块任务屏。"
         } else {
             taskCount.stringValue = "会话  \(snapshot.tasks.count) / 6"
             taskCount.toolTip = nil
@@ -617,14 +646,15 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         demoButton.image = NSImage(systemSymbolName: snapshot.demoRunning ? "stop.fill" : "play.fill", accessibilityDescription: demoButton.title)
         demoProgress.isHidden = usesLiveSource || !snapshot.demoRunning
         demoProgress.doubleValue = usesLiveSource ? 0 : simulator.demoProgress
-        actionStatusLabel.stringValue = snapshot.action.map { "正在\($0.kind.title)" } ?? "自动模式下偶尔起身溜达"
+        actionStatusLabel.stringValue = snapshot.action.map { "正在\(theme.title(for: $0.kind))" }
+            ?? (underwater ? "当前状态 · \(modes[modePicker.selectedSegment].1)" : "自动模式下偶尔起身溜达")
         actionStatusLabel.textColor = snapshot.action == nil ? AppPalette.secondary : AppPalette.green
         stopActionButton.isHidden = snapshot.action == nil
         switch snapshot.resolvedActivity() {
         case .working: activityLabel.stringValue = "● 分身正在替你打工"; activityLabel.textColor = AppPalette.green
         case .waiting: activityLabel.stringValue = "◷ 等你回来处理一下"; activityLabel.textColor = AppPalette.waiting
-        case .resting: activityLabel.stringValue = "☕ 现在是摸鱼时间"; activityLabel.textColor = AppPalette.secondary
-        case .offline: activityLabel.stringValue = "○ 工位暂时离线"; activityLabel.textColor = AppPalette.secondary
+        case .resting: activityLabel.stringValue = underwater ? "◌ 正在浅海潜水" : "☕ 现在是摸鱼时间"; activityLabel.textColor = AppPalette.secondary
+        case .offline: activityLabel.stringValue = underwater ? "○ 任务同步已暂停" : "○ 工位暂时离线"; activityLabel.textColor = AppPalette.secondary
         }
         // Progress changes every second; rebuilding controls would dismiss a
         // status menu while the user is choosing an item.
@@ -661,7 +691,9 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
     /// Exercises the production view hierarchy without ordering a window on screen,
     /// starting the simulator timer, touching the state file, or creating a status item.
     func renderInterface(output: URL?, size: NSSize, taskCount: Int, mode: EmployeeMode,
-                         action: EmployeeAction? = nil, actionTime: TimeInterval = 0) throws -> String {
+                         action: EmployeeAction? = nil, actionTime: TimeInterval = 0,
+                         theme: WorkplaceTheme = .cabin) throws -> String {
+        world.theme = theme
         usesLiveSource = false
         simulator = TaskSimulator()
         for _ in 0..<min(6, max(0, taskCount)) { simulator.addTask() }
@@ -833,12 +865,17 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         update()
     }
 
+    private var modeChoices: [(EmployeeMode, String)] {
+        if world.theme == .underwater { return [(.sitting, "漂浮"), (.standing, "巡游"), (.slacking, "划水")] }
+        return [(.automatic, "自动"), (.sitting, "坐着打工"), (.slacking, "摸鱼"), (.standing, "站着打工")]
+    }
+
     @objc private func modeChanged() {
-        let modes: [EmployeeMode] = [.automatic, .sitting, .slacking, .standing]
+        let modes = modeChoices
         guard modes.indices.contains(modePicker.selectedSegment) else { return }
         currentAction = nil
         ambientMotion.reset()
-        let mode = modes[modePicker.selectedSegment]
+        let mode = modes[modePicker.selectedSegment].0
         if usesLiveSource { liveSource?.setMode(mode, at: Date()); update() }
         else { mutate { $0.setMode(mode) } }
     }

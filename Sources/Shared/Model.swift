@@ -22,6 +22,50 @@ enum WorkplaceBackground: String, Codable, CaseIterable {
     var title: String { self == .room ? "房间" : "窗外" }
 }
 
+enum WorkplaceTheme: String, Codable, CaseIterable {
+    case cabin, underwater
+
+    var title: String { self == .cabin ? "原版小屋" : "海底工作站" }
+    var notesTitle: String { self == .cabin ? "门外待办" : "海中待办" }
+
+    func title(for background: WorkplaceBackground) -> String {
+        guard self == .underwater else { return background.title }
+        return background == .room ? "浅海" : "深海"
+    }
+
+    func title(for action: EmployeeAction) -> String {
+        guard self == .underwater else { return action.title }
+        switch action {
+        case .coffee: return "吐气泡"
+        case .stretch: return "水中翻身"
+        case .wave: return "挥挥手"
+        case .playWithCat: return "陪海豹玩"
+        case .walk: return "潜游一圈"
+        }
+    }
+
+    func title(for weather: WorldWeather) -> String {
+        guard self == .underwater else { return weather.title }
+        switch weather {
+        case .clear: return "清澈水域"
+        case .cloudy: return "轻度浑浊"
+        case .rain: return "活跃海流"
+        case .snow: return "海洋雪"
+        case .thunderstorm: return "强海流"
+        }
+    }
+
+    func title(for light: WorldTimeMode) -> String {
+        guard self == .underwater else { return light.title }
+        switch light {
+        case .automatic: return "随自然光变化"
+        case .day: return "明亮透光"
+        case .sunset: return "柔和散光"
+        case .night: return "微光"
+        }
+    }
+}
+
 enum SceneDisplayContext: String, Codable, CaseIterable {
     case desktop, screenSaver
     var title: String { self == .desktop ? "桌面背景" : "系统屏保" }
@@ -77,6 +121,7 @@ enum SceneWorldError: Error, LocalizedError {
 /// Every display and the saver receive one world definition. Its lighting is
 /// derived from a shared absolute date rather than a per-view animation clock.
 struct SceneWorld: Codable, Equatable {
+    var theme: WorkplaceTheme = .cabin
     var weather: WorldWeather = .clear
     var weatherMode: WeatherMode = .random
     var timeMode: WorldTimeMode = .automatic
@@ -92,7 +137,9 @@ struct SceneWorld: Codable, Equatable {
          timeMode: WorldTimeMode = .automatic,
          displayScenes: [String: WorkplaceBackground] = [:],
          screenSaverDisplayScenes: [String: WorkplaceBackground] = [:],
-         pendingWeatherEnabled: Bool = true, pendingWeatherPace: PendingWeatherPace = .balanced) {
+         pendingWeatherEnabled: Bool = true, pendingWeatherPace: PendingWeatherPace = .balanced,
+         theme: WorkplaceTheme = .cabin) {
+        self.theme = theme
         self.weather = weather; self.weatherMode = weatherMode
         self.timeMode = timeMode; self.displayScenes = displayScenes
         self.screenSaverDisplayScenes = screenSaverDisplayScenes
@@ -100,10 +147,11 @@ struct SceneWorld: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case weather, weatherMode, timeMode, displayScenes, screenSaverDisplayScenes, pendingWeatherEnabled, pendingWeatherPace
+        case theme, weather, weatherMode, timeMode, displayScenes, screenSaverDisplayScenes, pendingWeatherEnabled, pendingWeatherPace
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        theme = try values.decodeIfPresent(WorkplaceTheme.self, forKey: .theme) ?? .cabin
         weather = try values.decodeIfPresent(WorldWeather.self, forKey: .weather) ?? .clear
         // Upgrades opt into the new independent weather even if an older
         // pending-note policy was enabled. Preserve the stored manual choice.
