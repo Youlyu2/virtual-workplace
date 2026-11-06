@@ -30,8 +30,18 @@ enum PixelEmployeeSprites {
 
         // The transparency group applies the caller's global opacity once. It
         // keeps the room's sleeping fade independent of the two pose weights.
+        // Bound its temporary backing surface to the arms and body rather than
+        // allocating a full-display layer for a small employee on every frame.
+        var layerBounds = CGRect(x: feet.x - 140 * scale, y: feet.y + 130 * scale,
+                                 width: 280 * scale, height: 120 * scale)
+        for (image, height) in zip(workingBodies, [270 * scale, 310 * scale]) {
+            let width = height * CGFloat(image.width) / CGFloat(image.height)
+            layerBounds = layerBounds.union(CGRect(x: (feet.x - width / 2).rounded(),
+                y: feet.y.rounded(), width: width.rounded(), height: height.rounded()))
+        }
+        layerBounds = layerBounds.insetBy(dx: -2 * scale, dy: -2 * scale).integral
         c.saveGState()
-        c.beginTransparencyLayer(auxiliaryInfo: nil)
+        c.beginTransparencyLayer(in: layerBounds, auxiliaryInfo: nil)
         // The arms are behind the torso and rear hair. That preserves the
         // camera's depth: fingers peek beside the head instead of being pasted
         // onto the back of it. Body, chair and shoes never bob with a keystroke.

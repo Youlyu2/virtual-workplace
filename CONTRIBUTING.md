@@ -9,6 +9,7 @@
 - 使用「模拟」或 `--render` 示例数据验证画面，无需运行真实 Codex 任务。
 - 核心检查：`./scripts/test.sh`、`./scripts/test-pending-notes.sh`、`./scripts/test-pending-inbox.sh`、`./scripts/test-world-settings.sh`。
 - 只运行与修改有关的其他检查；真实系统屏保、锁屏和多显示器应单独记录验收范围。
+- 涉及常驻循环或绘图资源时，运行 `./scripts/test-codex-memory.sh` 或 `./scripts/test-render-memory.sh`；两者都设有诊断进程内存上限，详见[内存复验](docs/MEMORY.md)。
 
 ## 提交说明
 

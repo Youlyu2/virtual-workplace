@@ -129,21 +129,26 @@ private final class CodexObserverWorker {
 
     func run() {
         while isRunning {
-            do {
-                try connect()
-                publish(connected: false, message: "正在连接 Codex…")
-                try enqueueRequest("initialize", params: ["clientType": "virtual-workplace-observer"], version: 0)
-                while isRunning { try pump() }
-            } catch let error as CodexObserverFailure {
-                publish(connected: false, message: error.message, clear: true)
-            } catch {
-                publish(connected: false, message: "Codex 连接失败，正在重试", clear: true)
+            // This worker occupies a single GCD block for its entire lifetime.
+            // GCD cannot drain that block's autoreleases between iterations.
+            // Drain scans/JSONL reads every pump, and failed reconnects as well.
+            autoreleasepool {
+                do {
+                    try connect()
+                    publish(connected: false, message: "正在连接 Codex…")
+                    try enqueueRequest("initialize", params: ["clientType": "virtual-workplace-observer"], version: 0)
+                    while isRunning { try autoreleasepool { try pump() } }
+                } catch let error as CodexObserverFailure {
+                    publish(connected: false, message: error.message, clear: true)
+                } catch {
+                    publish(connected: false, message: "Codex 连接失败，正在重试", clear: true)
+                }
+                disconnect()
             }
-            disconnect()
             let retry = now + 2
             while isRunning && now < retry { Thread.sleep(forTimeInterval: 0.1) }
         }
-        disconnect()
+        autoreleasepool { disconnect() }
     }
 
     private func connect() throws {
@@ -192,6 +197,7 @@ private final class CodexObserverWorker {
         if clientID != nil && now >= nextScan {
             candidates = try readCandidates()
             let wanted = Set(candidates.map(\.key))
+            resyncAt = resyncAt.filter { wanted.contains($0.key) }
             rolloutReader.retain(threadIDs: Set(candidates.filter { $0.hostID == "local" }.map(\.id)))
             detailSessionIDs.formIntersection(wanted)
             for (id, owner) in owners where !wanted.contains(id) {

@@ -143,7 +143,12 @@ enum PendingNoteVisitors {
             c.setFillColor(WorldAtmosphere.color(0x29372B, alpha: 0.25).cgColor)
             c.fill(CGRect(x: visitor.feet.x - 25 * s, y: visitor.feet.y - 2 * s,
                           width: 50 * s, height: 6 * s).integral)
-            c.saveGState(); c.beginTransparencyLayer(auxiliaryInfo: nil)
+            // Each visitor needs an isolated tint, not a display-sized backing
+            // surface. Leave generous room for hats and every walking profile.
+            let layerBounds = CGRect(x: visitor.feet.x - visitor.spriteHeight,
+                y: visitor.feet.y - 4 * s, width: visitor.spriteHeight * 2,
+                height: visitor.spriteHeight + 8 * s).integral
+            c.saveGState(); c.beginTransparencyLayer(in: layerBounds, auxiliaryInfo: nil)
             let drawn = PendingVisitorSprites.draw(in: c, variant: visitor.slot,
                 direction: visitor.motion.direction, distance: visitor.motion.distance,
                 isMoving: visitor.motion.isMoving, feet: visitor.feet, targetHeight: visitor.spriteHeight)

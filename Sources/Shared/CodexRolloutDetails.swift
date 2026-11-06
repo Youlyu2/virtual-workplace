@@ -20,6 +20,12 @@ struct CodexRolloutAccumulator {
     init(threadID: String) { self.threadID = threadID }
 
     mutating func consume(line: Data) {
+        // A single incremental read may contain thousands of rows. Discard
+        // Foundation's temporary JSON/date objects before parsing the next row.
+        autoreleasepool { consumeRow(line: line) }
+    }
+
+    private mutating func consumeRow(line: Data) {
         guard line.count <= CodexRolloutReader.maximumLineBytes,
               let row = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               let kind = row["type"] as? String,
