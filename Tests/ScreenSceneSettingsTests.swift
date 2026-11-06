@@ -43,7 +43,7 @@ enum ScreenSceneSettingsTests {
         let root = window.contentView!
         let views = descendants(root)
         let popups = views.compactMap { $0 as? NSPopUpButton }
-        expect(popups.count == NSScreen.screens.count + 3, "each monitor has a background selector plus shared base weather, time and pending-weather pace")
+        expect(popups.count == NSScreen.screens.count + 3, "each monitor has a background selector plus shared manual weather, time and weather mode")
         expect(popups.allSatisfy { $0.frame.width >= 100 && $0.frame.height >= 20 },
             "every background and environment selector has a visible usable frame")
         expect(popups.contains { $0.selectedItem?.title == WorldWeather.rain.title }
@@ -58,18 +58,16 @@ enum ScreenSceneSettingsTests {
             "offscreen review never opens a window or takes focus")
         let imageData = try Data(contentsOf: output)
         expect(imageData.count > 10_000, "the production scene preview renders to an image")
-        let pendingEnabled = control("pending-weather-enabled", in: root, as: NSButton.self)
-        let pace = control("pending-weather-pace", in: root, as: NSPopUpButton.self)
-        let thresholds = control("pending-weather-thresholds", in: root, as: NSTextField.self)
-        let pendingStatus = control("pending-weather-status", in: root, as: NSTextField.self)
-        expect(pendingEnabled.state == .on && pace.isEnabled && pace.indexOfSelectedItem == 1,
-               "pending weather defaults to enabled and the user's balanced one-hour/four-hour pace")
-        expect(thresholds.stringValue.contains("1小时转阴") && thresholds.stringValue.contains("2小时30分钟下雨")
-               && thresholds.stringValue.contains("4小时雷雨") && thresholds.stringValue.contains("剩余便签"),
-               "the settings explain every threshold and recompute from remaining notes")
-        expect(root.bounds.contains(pendingEnabled.convert(pendingEnabled.bounds, to: root))
-               && root.bounds.contains(pace.convert(pace.bounds, to: root))
-               && pace.frame.width >= 300, "the pending-weather settings are visible and usable")
+        let weatherMode = control("weather-mode", in: root, as: NSPopUpButton.self)
+        let weatherHelp = control("shared-weather-help", in: root, as: NSTextField.self)
+        let weatherStatus = control("shared-weather-status", in: root, as: NSTextField.self)
+        expect(weatherMode.indexOfSelectedItem == 0 && weatherHelp.stringValue.contains("每45分钟")
+               && weatherHelp.stringValue.contains("不受待办") && weatherStatus.stringValue.contains("随机轮换"),
+               "random weather is default and explains the independent synchronized schedule")
+        expect(!control("shared-weather", in: root, as: NSPopUpButton.self).isEnabled,
+               "manual selector is disabled while random weather is active")
+        expect(!views.contains { $0.identifier?.rawValue == "pending-weather-enabled" },
+               "obsolete overdue-weather controls are removed")
         let initialWindowCount = app.windows.count
         let picker = control("scene-context", in: root, as: NSSegmentedControl.self)
         expect(picker.segmentCount == 2 && picker.label(forSegment: 0) == SceneDisplayContext.desktop.title
@@ -115,6 +113,8 @@ enum ScreenSceneSettingsTests {
         }
         let weather = control("shared-weather", in: root, as: NSPopUpButton.self)
         let time = control("shared-time", in: root, as: NSPopUpButton.self)
+        weatherMode.selectItem(at: 1); send(weatherMode)
+        expect(changes.last?.weatherMode == .manual && weather.isEnabled, "manual mode enables the fixed weather selector")
         weather.selectItem(withTitle: WorldWeather.snow.title); send(weather)
         let beforeSwitch = changes.count
         choose(.screenSaver)
@@ -169,46 +169,38 @@ enum ScreenSceneSettingsTests {
         weatherSnapshot.pendingNotes = []
         controller.update(snapshot: weatherSnapshot)
         let firstPreview = displays.first.map { control("scene-preview:\($0.id)", in: root, as: NSView.self) }
-        let clearPreviewData = firstPreview.map(thumbnail)
-        let overdue = PendingNote(id: "overdue-ui", text: "等待天气测试", createdAt: Date().addingTimeInterval(-5 * 3600))
+        let overdue = PendingNote(id: "overdue-ui", text: "等待天气测试", createdAt: Date().addingTimeInterval(-50 * 3600))
         weatherSnapshot.pendingNotes = [overdue]
         controller.update(snapshot: weatherSnapshot)
-        expect(changes.count == weatherPublished && weather.selectedItem?.title == latest.weather.title,
-               "derived weather updates never publish settings or overwrite the user's base weather selector")
-        expect(pendingStatus.stringValue.contains("雷雨") && pendingStatus.stringValue.contains("等待"),
-               "an overdue note explains the active thunderstorm and its cause")
-        if let firstPreview, let clearPreviewData, let first = displays.first {
+        expect(changes.count == weatherPublished && weather.selectedItem?.title == latest.weather.title
+               && weatherStatus.stringValue.contains("手动固定") && weatherStatus.stringValue.contains(latest.weather.title),
+               "old notes never change manual weather or publish settings")
+        if let firstPreview, let first = displays.first {
             expect(control("scene-preview:\(first.id)", in: root, as: NSView.self) === firstPreview,
                    "note changes reuse display selectors and thumbnail views")
-            expect(firstPreview.accessibilityValue() as? String == "当前天气：雷雨"
-                   && thumbnail(firstPreview) != clearPreviewData,
-                   "the real scene thumbnail changes with pending-note weather")
+            expect(firstPreview.accessibilityValue() as? String == "当前天气：\(latest.weather.title)",
+                   "thumbnails keep the shared manual weather even with overdue notes")
         }
         controller.showSaveError("测试保存失败，保留基础设置")
         controller.update(snapshot: weatherSnapshot)
         expect(descendants(root).compactMap { $0 as? NSTextField }.contains { !$0.isHidden && $0.stringValue.contains("测试保存失败") },
                "a heartbeat does not dismiss an unresolved settings save error")
         controller.clearSaveError()
-        pendingEnabled.state = .off; send(pendingEnabled)
-        expect(changes.last?.pendingWeatherEnabled == false && !pace.isEnabled
-               && pendingStatus.stringValue.contains("已关闭") && weather.selectedItem?.title == latest.weather.title,
-               "disabling the effect restores base-weather previews and leaves the selected base value intact")
-        pendingEnabled.state = .on; send(pendingEnabled)
-        pace.selectItem(at: 0); send(pace)
-        expect(changes.last?.pendingWeatherPace == .quick && thresholds.stringValue.contains("30分钟转阴")
-               && thresholds.stringValue.contains("1小时15分钟下雨") && thresholds.stringValue.contains("2小时雷雨"),
-               "quick pace changes all displayed thresholds through the settings callback")
-        pace.selectItem(at: 2); send(pace)
-        expect(changes.last?.pendingWeatherPace == .relaxed && thresholds.stringValue.contains("4小时转阴")
-               && thresholds.stringValue.contains("14小时下雨") && thresholds.stringValue.contains("24小时雷雨"),
-               "relaxed pace exposes its matching thresholds")
+        weatherMode.selectItem(at: 0); send(weatherMode)
+        expect(changes.last?.weatherMode == .random && !weather.isEnabled
+               && weatherStatus.stringValue.contains("随机轮换") && weather.selectedItem?.title == latest.weather.title,
+               "random mode resumes without overwriting saved manual weather")
+        choose(.desktop)
+        expect(weatherMode.indexOfSelectedItem == 0, "random mode is shared between desktop and saver settings")
+        weatherMode.selectItem(at: 1); send(weatherMode)
         weather.selectItem(withTitle: WorldWeather.thunderstorm.title); send(weather)
-        expect(changes.last?.weather == .thunderstorm, "thunderstorms can also be selected as the manual base weather")
+        expect(changes.last?.weather == .thunderstorm && changes.last?.weatherMode == .manual,
+               "thunderstorms remain available as an explicit fixed weather choice")
         weatherSnapshot.world = SceneWorld(weather: .clear, timeMode: .day)
         weatherSnapshot.pendingNotes = []
         controller.update(snapshot: weatherSnapshot)
-        expect(weather.selectedItem?.title == WorldWeather.clear.title && pendingStatus.stringValue.contains("无超时"),
-               "removing overdue notes restores the base-weather explanation")
+        expect(weather.selectedItem?.title == WorldWeather.clear.title && weatherStatus.stringValue.contains("随机轮换"),
+               "new worlds use independent random weather even with no pending notes")
         root.layoutSubtreeIfNeeded()
         expect(descendants(root).compactMap { $0 as? NSButton }.allSatisfy {
             $0.frame.height >= 20 && root.bounds.contains($0.convert($0.bounds, to: root))

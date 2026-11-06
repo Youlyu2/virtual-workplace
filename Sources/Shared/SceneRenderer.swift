@@ -59,7 +59,7 @@ enum SceneRenderer {
                      reduceMotion: Bool, animation: SceneAnimation? = nil, now: Date = Date(),
                      background: WorkplaceBackground = .room, viewport: WorldViewport? = nil) {
         // Resolve the same absolute-time policy in every host. Keep the saved
-        // base weather untouched so handing off a note restores that choice.
+        // manual weather untouched while the shared random calendar advances.
         var snapshot = sourceSnapshot
         snapshot.world = sourceSnapshot.effectiveWorld(at: now)
         c.saveGState()

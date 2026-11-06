@@ -41,42 +41,57 @@ struct PendingWeatherEffect: Equatable {
     var reason: String?
 }
 
-extension SceneSnapshot {
-    /// Derived solely from durable personal notes and the supplied absolute
-    /// clock. Task status, host uptime and freshness never reset the wait.
-    func pendingWeatherEffect(at now: Date) -> PendingWeatherEffect {
-        let base = world ?? SceneWorld()
-        guard now.timeIntervalSince1970.isFinite,
-              let oldest = pendingNotes?.filter({
-                  $0.createdAt.timeIntervalSince1970.isFinite && $0.createdAt.timeIntervalSince1970 >= 0
-              }).min(by: { $0.createdAt < $1.createdAt }) else {
-            return PendingWeatherEffect(stage:.none,oldestWait:0,weather:base.weather,reason:nil)
-        }
-        let elapsed = max(0, now.timeIntervalSince(oldest.createdAt))
-        let wait = elapsed.isFinite ? elapsed : 0
-        guard base.pendingWeatherEnabled else {
-            return PendingWeatherEffect(stage:.none,oldestWait:wait,weather:base.weather,reason:nil)
-        }
-        let stage: PendingWeatherStage
-        let weather: WorldWeather
-        if wait >= base.pendingWeatherPace.stormAfter {
-            stage = .thunderstorm; weather = .thunderstorm
-        } else if wait >= base.pendingWeatherPace.rainAfter {
-            stage = .rain; weather = .rain
-        } else if wait >= base.pendingWeatherPace.cloudyAfter {
-            stage = .cloudy; weather = .cloudy
-        } else {
-            return PendingWeatherEffect(stage:.none,oldestWait:wait,weather:base.weather,reason:nil)
-        }
-        return PendingWeatherEffect(stage:stage,oldestWait:wait,weather:weather,
-            reason:"最早的门外待办\(oldest.waitingLabel(at:now))，天气转为\(weather.title)")
+/// A shared pseudorandom weather calendar. Absolute 45-minute periods, rather
+/// than a per-process random generator or timer, keep every display and saver
+/// in sync across restarts and while the companion application is offline.
+enum RandomWeatherPolicy {
+    static let interval: TimeInterval = 45 * 60
+
+    private static func bucket(at date: Date) -> UInt64? {
+        let seconds = date.timeIntervalSince1970
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        let period = floor(seconds / interval)
+        guard period < Double(UInt64.max) else { return nil }
+        return UInt64(period)
     }
 
-    /// The manual weather remains stored in `world`; removing notes or
-    /// disabling their effect restores it without writing preference changes.
+    static func weather(at date: Date) -> WorldWeather {
+        guard let period = bucket(at: date) else { return .clear }
+        // SplitMix64 with an authored salt; Swift Hasher is randomized per
+        // process and therefore cannot define a cross-process weather calendar.
+        var value = period &+ 0x9E3779B97F4A7C15
+        value = (value ^ (value >> 30)) &* 0xBF58476D1CE4E5B9
+        value = (value ^ (value >> 27)) &* 0x94D049BB133111EB
+        let choice = (value ^ (value >> 31)) % 100
+        switch choice {
+        case 0..<65: return .clear
+        case 65..<83: return .cloudy
+        case 83..<93: return .rain
+        case 93..<98: return .snow
+        default: return .thunderstorm
+        }
+    }
+
+    static func nextChange(after date: Date) -> Date? {
+        guard let period = bucket(at: date), period < UInt64.max else { return nil }
+        let seconds = Double(period + 1) * interval
+        guard seconds.isFinite, seconds > date.timeIntervalSince1970 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+}
+
+extension SceneSnapshot {
+    /// Compatibility for old diagnostic callers. Pending notes deliberately
+    /// have no weather stage or explanation under the independent policy.
+    func pendingWeatherEffect(at now: Date) -> PendingWeatherEffect {
+        PendingWeatherEffect(stage: .none, oldestWait: 0,
+            weather: effectiveWorld(at: now).weather, reason: nil)
+    }
+
+    /// Resolution is read-only: never overwrite the saved fixed-weather choice.
     func effectiveWorld(at now: Date) -> SceneWorld {
         var result = world ?? SceneWorld()
-        result.weather = pendingWeatherEffect(at:now).weather
+        if result.weatherMode == .random { result.weather = RandomWeatherPolicy.weather(at: now) }
         return result
     }
 }

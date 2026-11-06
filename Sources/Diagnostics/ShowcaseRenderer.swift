@@ -14,7 +14,7 @@ struct ShowcaseRenderer {
         result.preferredPosture = mode == .standing ? .standing : .sitting
         result.taskOrigin = .simulation
         result.completedToday = 5
-        result.world = SceneWorld(weather: .clear, timeMode: .day)
+        result.world = SceneWorld(weather: .clear, weatherMode: .manual, timeMode: .day)
         let titles = ["给小屋添一点生气", "检查新的页面布局", "等你确认设计方案", "整理项目运行说明", "补齐设置页空状态", "优化图片加载速度"]
         result.tasks = (0..<taskCount).map { index in
             WorkplaceTask(id: "showcase-task-\(index)", title: titles[index],

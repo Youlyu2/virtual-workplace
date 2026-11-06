@@ -88,6 +88,7 @@ import ImageIO
             let inside = context(roomSize)
             var snapshot = SceneSnapshot.empty(now: date)
             snapshot.mode = .sitting; snapshot.world = world
+            snapshot.world?.weatherMode = .manual
             SceneRenderer.draw(in: inside, bounds: CGRect(origin: .zero, size: roomSize), snapshot: snapshot,
                 time: 0, reduceMotion: false, now: date, background: .room, viewport: roomCamera)
             var glassSamples = 0, matches = true

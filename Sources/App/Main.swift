@@ -128,7 +128,9 @@ enum VirtualWorkplaceMain {
         }
         snapshot.world = SceneWorld(weather: value(after: "--weather", in: arguments).flatMap(WorldWeather.init(rawValue:)) ?? .clear,
                                     timeMode: value(after: "--daylight", in: arguments).flatMap(WorldTimeMode.init(rawValue:)) ?? .automatic)
-        snapshot.world?.pendingWeatherEnabled = !arguments.contains("--pending-weather-off")
+        // Explicit render fixtures stay reproducible; --random-weather previews
+        // the same absolute-time calendar used by desktop and saver hosts.
+        snapshot.world?.weatherMode = arguments.contains("--random-weather") ? .random : .manual
         let background = value(after: "--background", in: arguments).flatMap(WorkplaceBackground.init(rawValue:)) ?? .room
         if let kind = value(after: "--action", in: arguments).flatMap(EmployeeAction.init(rawValue:)) {
             let actionTime = max(0, Double(value(after: "--action-time", in: arguments) ?? "1") ?? 1)

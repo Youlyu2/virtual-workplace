@@ -30,7 +30,7 @@ import Darwin
         var snapshot = SceneSnapshot.empty(now: start)
         snapshot.mode = .sitting
         snapshot.world = SceneWorld(weather: .clear, timeMode: .day)
-        snapshot.world?.pendingWeatherEnabled = false
+        snapshot.world?.weatherMode = .manual
         snapshot.pendingNotes = (0..<8).map {
             PendingNote(id: "memory-note-\($0)", text: "待办 \($0 + 1)：整理项目说明，核对任务状态",
                 createdAt: start.addingTimeInterval(-Double($0 * 600)), slot: $0)
@@ -58,7 +58,7 @@ import Darwin
                             var snapshot = fixture()
                             snapshot.mode = pose
                             snapshot.world = SceneWorld(weather: weather, timeMode: mode)
-                            snapshot.world?.pendingWeatherEnabled = false
+                            snapshot.world?.weatherMode = .manual
                             SceneRenderer.draw(in: c, bounds: bounds, snapshot: snapshot, time: 112.5,
                                 reduceMotion: false, now: start, background: background)
                             hashes.append(hash(c))

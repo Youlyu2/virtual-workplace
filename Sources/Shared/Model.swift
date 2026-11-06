@@ -40,6 +40,11 @@ enum WorldWeather: String, Codable, CaseIterable {
     }
 }
 
+enum WeatherMode: String, Codable, CaseIterable {
+    case random, manual
+    var title: String { self == .random ? "随机天气" : "固定天气" }
+}
+
 enum WorldTimeMode: String, Codable, CaseIterable {
     case automatic, day, sunset, night
     var title: String {
@@ -73,28 +78,36 @@ enum SceneWorldError: Error, LocalizedError {
 /// derived from a shared absolute date rather than a per-view animation clock.
 struct SceneWorld: Codable, Equatable {
     var weather: WorldWeather = .clear
+    var weatherMode: WeatherMode = .random
     var timeMode: WorldTimeMode = .automatic
     /// Existing choices remain desktop preferences when older files are read.
     var displayScenes: [String: WorkplaceBackground] = [:]
     var screenSaverDisplayScenes: [String: WorkplaceBackground] = [:]
+    // Retained for decoding older preference files. Notes no longer drive
+    // weather; all hosts resolve weatherMode from the same absolute clock.
     var pendingWeatherEnabled: Bool = true
     var pendingWeatherPace: PendingWeatherPace = .balanced
 
-    init(weather: WorldWeather = .clear, timeMode: WorldTimeMode = .automatic,
+    init(weather: WorldWeather = .clear, weatherMode: WeatherMode = .random,
+         timeMode: WorldTimeMode = .automatic,
          displayScenes: [String: WorkplaceBackground] = [:],
          screenSaverDisplayScenes: [String: WorkplaceBackground] = [:],
          pendingWeatherEnabled: Bool = true, pendingWeatherPace: PendingWeatherPace = .balanced) {
-        self.weather = weather; self.timeMode = timeMode; self.displayScenes = displayScenes
+        self.weather = weather; self.weatherMode = weatherMode
+        self.timeMode = timeMode; self.displayScenes = displayScenes
         self.screenSaverDisplayScenes = screenSaverDisplayScenes
         self.pendingWeatherEnabled = pendingWeatherEnabled; self.pendingWeatherPace = pendingWeatherPace
     }
 
     private enum CodingKeys: String, CodingKey {
-        case weather, timeMode, displayScenes, screenSaverDisplayScenes, pendingWeatherEnabled, pendingWeatherPace
+        case weather, weatherMode, timeMode, displayScenes, screenSaverDisplayScenes, pendingWeatherEnabled, pendingWeatherPace
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         weather = try values.decodeIfPresent(WorldWeather.self, forKey: .weather) ?? .clear
+        // Upgrades opt into the new independent weather even if an older
+        // pending-note policy was enabled. Preserve the stored manual choice.
+        weatherMode = try values.decodeIfPresent(WeatherMode.self, forKey: .weatherMode) ?? .random
         timeMode = try values.decodeIfPresent(WorldTimeMode.self, forKey: .timeMode) ?? .automatic
         displayScenes = try values.decodeIfPresent([String: WorkplaceBackground].self, forKey: .displayScenes) ?? [:]
         screenSaverDisplayScenes = try values.decodeIfPresent([String: WorkplaceBackground].self, forKey: .screenSaverDisplayScenes) ?? [:]

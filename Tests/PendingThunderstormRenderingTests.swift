@@ -51,7 +51,7 @@ import Darwin
                               reduce: Bool = false, uptime: TimeInterval = 0) -> CGContext {
         let c = context(size)
         var snapshot = SceneSnapshot.empty(now: now)
-        snapshot.mode = .sitting; snapshot.world = SceneWorld(weather: .thunderstorm, timeMode: mode)
+        snapshot.mode = .sitting; snapshot.world = SceneWorld(weather: .thunderstorm, weatherMode: .manual, timeMode: mode)
         snapshot.tasks = [WorkplaceTask(id: "storm-monitor", title: "确认任务信息保持清晰", status: .running, slot: 0)]
         SceneRenderer.draw(in: c, bounds: CGRect(origin: .zero, size: size), snapshot: snapshot,
             time: uptime, reduceMotion: reduce, now: now, background: background)

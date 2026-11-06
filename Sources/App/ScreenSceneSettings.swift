@@ -59,16 +59,18 @@ final class ScreenSceneSettingsController: NSObject {
     private var resetButton: NSButton?
     private var weatherPopup: NSPopUpButton?
     private var timePopup: NSPopUpButton?
-    private var pendingWeatherCheckbox: NSButton?
-    private var pendingWeatherPacePopup: NSPopUpButton?
-    private var pendingWeatherExplanation: NSTextField?
-    private var pendingWeatherStatus: NSTextField?
+    private var weatherModePopup: NSPopUpButton?
+    private var weatherExplanation: NSTextField?
+    private var weatherStatus: NSTextField?
     private var saveErrorLabel: NSTextField?
     private var previews: [(String, ScreenBackgroundPreview)] = []
     private var displayObserver: NSObjectProtocol?
     private let weatherOptions: [WorldWeather] = [.clear, .cloudy, .rain, .thunderstorm, .snow]
     private let timeOptions: [WorldTimeMode] = [.automatic, .day, .sunset, .night]
-    private let paceOptions: [PendingWeatherPace] = [.quick, .balanced, .relaxed]
+    private let weatherModes: [WeatherMode] = [.random, .manual]
+    private static let weatherClock: DateFormatter = {
+        let formatter = DateFormatter(); formatter.dateFormat = "HH:mm"; return formatter
+    }()
     private var lastPreviewWeather: WorldWeather?
     private var lastPreviewMinute: Int?
     private static let ink = NSColor(srgbRed: 0.17, green: 0.23, blue: 0.22, alpha: 1)
@@ -110,7 +112,7 @@ final class ScreenSceneSettingsController: NSObject {
     }
 
     /// A heartbeat does not dismiss a save error or recreate selectors. The
-    /// settings always retain the base weather; only previews use note effects.
+    /// settings retain the manual weather; previews resolve the shared weather.
     func update(snapshot: SceneSnapshot) {
         let nextWorld = snapshot.world ?? SceneWorld()
         let nextNotes = snapshot.pendingNotes ?? []
@@ -239,13 +241,13 @@ final class ScreenSceneSettingsController: NSObject {
         environmentRow.orientation = .horizontal
         environmentRow.spacing = 10
         environmentRow.alignment = .centerY
-        environmentRow.addArrangedSubview(label("基础天气", size: 12))
+        environmentRow.addArrangedSubview(label("手动天气", size: 12))
         let weather = NSPopUpButton(frame: .zero, pullsDown: false)
         weather.identifier = NSUserInterfaceItemIdentifier("shared-weather")
         weather.addItems(withTitles: weatherOptions.map(\.title))
         weather.target = self; weather.action = #selector(weatherChanged(_:))
         weather.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        weather.setAccessibilityLabel("全部屏幕的基础天气")
+        weather.setAccessibilityLabel("全部屏幕的手动天气")
         environmentRow.addArrangedSubview(weather)
         let gap = NSView()
         gap.widthAnchor.constraint(equalToConstant: 12).isActive = true
@@ -265,41 +267,32 @@ final class ScreenSceneSettingsController: NSObject {
         body.addArrangedSubview(explanation)
         explanation.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
 
-        let pendingEnabled = NSButton(checkboxWithTitle: "待办超时影响天气", target: self,
-                                      action: #selector(pendingWeatherChanged(_:)))
-        pendingEnabled.identifier = NSUserInterfaceItemIdentifier("pending-weather-enabled")
-        pendingEnabled.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
-        pendingEnabled.toolTip = "按等待最久的门外便签改变天气；不改写基础天气或便签"
-        pendingWeatherCheckbox = pendingEnabled
-        body.addArrangedSubview(pendingEnabled)
-        let paceRow = NSStackView()
-        paceRow.orientation = .horizontal; paceRow.spacing = 10; paceRow.alignment = .centerY
-        paceRow.addArrangedSubview(label("变化节奏", size: 12))
-        let pace = NSPopUpButton(frame: .zero, pullsDown: false)
-        pace.identifier = NSUserInterfaceItemIdentifier("pending-weather-pace")
-        pace.addItems(withTitles: paceOptions.map { option in
-            "\(option.title) · \(Self.duration(option.cloudyAfter))转阴 / \(Self.duration(option.stormAfter))雷雨"
-        })
-        pace.target = self; pace.action = #selector(pendingWeatherPaceChanged(_:))
-        pace.widthAnchor.constraint(equalToConstant: 330).isActive = true
-        pace.setAccessibilityLabel("待办天气变化节奏")
-        paceRow.addArrangedSubview(pace)
-        pendingWeatherPacePopup = pace
-        body.addArrangedSubview(paceRow)
+        let modeRow = NSStackView()
+        modeRow.orientation = .horizontal; modeRow.spacing = 10; modeRow.alignment = .centerY
+        modeRow.addArrangedSubview(label("天气模式", size: 12))
+        let mode = NSPopUpButton(frame: .zero, pullsDown: false)
+        mode.identifier = NSUserInterfaceItemIdentifier("weather-mode")
+        mode.addItems(withTitles: ["随机轮换", "手动固定"])
+        mode.target = self; mode.action = #selector(weatherModeChanged(_:))
+        mode.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        mode.setAccessibilityLabel("全部屏幕的天气模式")
+        modeRow.addArrangedSubview(mode)
+        weatherModePopup = mode
+        body.addArrangedSubview(modeRow)
         let pendingHelp = NSTextField(wrappingLabelWithString: "")
-        pendingHelp.identifier = NSUserInterfaceItemIdentifier("pending-weather-thresholds")
+        pendingHelp.identifier = NSUserInterfaceItemIdentifier("shared-weather-help")
         pendingHelp.font = .systemFont(ofSize: 11); pendingHelp.textColor = Self.secondary
         pendingHelp.maximumNumberOfLines = 3
         body.addArrangedSubview(pendingHelp)
         pendingHelp.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-        pendingWeatherExplanation = pendingHelp
+        weatherExplanation = pendingHelp
         let pendingStatus = NSTextField(wrappingLabelWithString: "")
-        pendingStatus.identifier = NSUserInterfaceItemIdentifier("pending-weather-status")
+        pendingStatus.identifier = NSUserInterfaceItemIdentifier("shared-weather-status")
         pendingStatus.font = .systemFont(ofSize: 11); pendingStatus.textColor = Self.ink
         pendingStatus.maximumNumberOfLines = 2
         body.addArrangedSubview(pendingStatus)
         pendingStatus.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-        pendingWeatherStatus = pendingStatus
+        weatherStatus = pendingStatus
         let saveError = NSTextField(wrappingLabelWithString: "")
         saveError.font = .systemFont(ofSize: 11)
         saveError.textColor = NSColor(srgbRed: 0.62, green: 0.25, blue: 0.18, alpha: 1)
@@ -400,9 +393,8 @@ final class ScreenSceneSettingsController: NSObject {
         }
         weatherPopup?.selectItem(at: weatherOptions.firstIndex(of: world.weather) ?? 0)
         timePopup?.selectItem(at: timeOptions.firstIndex(of: world.timeMode) ?? 0)
-        pendingWeatherCheckbox?.state = world.pendingWeatherEnabled ? .on : .off
-        pendingWeatherPacePopup?.selectItem(at: paceOptions.firstIndex(of: world.pendingWeatherPace) ?? 1)
-        pendingWeatherPacePopup?.isEnabled = world.pendingWeatherEnabled
+        weatherModePopup?.selectItem(at: weatherModes.firstIndex(of: world.weatherMode) ?? 0)
+        weatherPopup?.isEnabled = world.weatherMode == .manual
         refreshWeatherExplanation(at: Date())
         if rebuildRows { rebuildDisplayRows() }
         refreshPreviews(force: rebuildRows)
@@ -442,25 +434,18 @@ final class ScreenSceneSettingsController: NSObject {
     }
 
     private func refreshWeatherExplanation(at date: Date) {
-        let pace = world.pendingWeatherPace
-        pendingWeatherExplanation?.stringValue = "按等待最久的便签：\(Self.duration(pace.cloudyAfter))转阴，\(Self.duration(pace.rainAfter))下雨，\(Self.duration(pace.stormAfter))雷雨。\n交办后按剩余便签重新计算；无超时便签时恢复基础天气。"
-        let effect = weatherSnapshot(at: date).pendingWeatherEffect(at: date)
+        let current = weatherSnapshot(at: date).effectiveWorld(at: date).weather
         let message: String
-        if !world.pendingWeatherEnabled {
-            message = "待办天气已关闭，当前显示基础天气：\(world.weather.title)。"
-        } else if let reason = effect.reason {
-            message = "当前显示：\(effect.weather.title) · \(reason)"
+        if world.weatherMode == .random {
+            weatherExplanation?.stringValue = "每45分钟进入一个随机天气时段，晴天为主，偶尔下雨、下雪或雷雨。\n天气不受待办等待时长影响，所有屏幕保持同步。"
+            let next = RandomWeatherPolicy.nextChange(after: date).map { " · 下一时段 \(Self.weatherClock.string(from: $0))" } ?? ""
+            message = "当前显示：\(current.title) · 随机轮换\(next)"
         } else {
-            message = "当前显示：\(effect.weather.title) · 尚无超时便签，保持基础天气。"
+            weatherExplanation?.stringValue = "固定显示你选择的天气。切回随机轮换时仍保留手动选择。\n房间窗户、窗外与屏保共用同一份天气。"
+            message = "当前显示：\(current.title) · 手动固定"
         }
-        pendingWeatherStatus?.stringValue = message
-        pendingWeatherStatus?.toolTip = message
-    }
-
-    private static func duration(_ interval: TimeInterval) -> String {
-        let minutes = max(0, Int(interval / 60))
-        if minutes < 60 { return "\(minutes)分钟" }
-        return minutes % 60 == 0 ? "\(minutes / 60)小时" : "\(minutes / 60)小时\(minutes % 60)分钟"
+        weatherStatus?.stringValue = message
+        weatherStatus?.toolTip = message
     }
 
     @objc private func backgroundChanged(_ sender: ScreenBackgroundPopup) {
@@ -480,20 +465,16 @@ final class ScreenSceneSettingsController: NSObject {
         refreshControls(rebuildRows: true)
     }
     @objc private func weatherChanged(_ sender: NSPopUpButton) {
-        guard weatherOptions.indices.contains(sender.indexOfSelectedItem) else { return }
+        guard world.weatherMode == .manual, weatherOptions.indices.contains(sender.indexOfSelectedItem) else { return }
         world.weather = weatherOptions[sender.indexOfSelectedItem]; publish()
     }
     @objc private func timeChanged(_ sender: NSPopUpButton) {
         guard timeOptions.indices.contains(sender.indexOfSelectedItem) else { return }
         world.timeMode = timeOptions[sender.indexOfSelectedItem]; publish()
     }
-    @objc private func pendingWeatherChanged(_ sender: NSButton) {
-        world.pendingWeatherEnabled = sender.state == .on
-        publish()
-    }
-    @objc private func pendingWeatherPaceChanged(_ sender: NSPopUpButton) {
-        guard paceOptions.indices.contains(sender.indexOfSelectedItem) else { return }
-        world.pendingWeatherPace = paceOptions[sender.indexOfSelectedItem]
+    @objc private func weatherModeChanged(_ sender: NSPopUpButton) {
+        guard weatherModes.indices.contains(sender.indexOfSelectedItem) else { return }
+        world.weatherMode = weatherModes[sender.indexOfSelectedItem]
         publish()
     }
     @objc private func resetLayout() {

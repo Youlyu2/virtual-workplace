@@ -260,7 +260,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         header.alignment = .centerY
         header.spacing = 10
         let title = label("虚拟工位", size: 24, weight: .semibold)
-        let version = label("PIXEL WORKPLACE  0.9.3", size: 10, weight: .semibold, color: AppPalette.secondary)
+        let version = label("PIXEL WORKPLACE  0.9.4", size: 10, weight: .semibold, color: AppPalette.secondary)
         let titleGroup = NSStackView(views: [title, version])
         titleGroup.orientation = .vertical
         titleGroup.alignment = .leading
@@ -964,7 +964,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
 
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "虚拟工位 0.9.3"
+        alert.messageText = "虚拟工位 0.9.4"
         alert.informativeText = "把任务交给工位里的自己。\n\nCodex 实时任务与模拟演示可切换。\n实时模式只读同步本机与已连接开发机的会话，未知进度不显示百分比。\n支持独立窗口、桌面背景和 macOS 系统屏保。"
         alert.addButton(withTitle: "继续上班")
         alert.runModal()

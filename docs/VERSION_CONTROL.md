@@ -37,3 +37,5 @@ git worktree add --detach ../virtual-workplace-review <tag-or-commit>
 ## 许可
 
 贡献前请阅读仓库根目录的 [LICENSE](../LICENSE) 和 [素材许可说明](../ASSET_LICENSE.md)。新增第三方资源时应同时提供来源和适用的许可条件。
+
+`v0.9.4` 将天气改为独立随机轮换，保留手动固定和双屏同步，待办等待时长不再影响天气。

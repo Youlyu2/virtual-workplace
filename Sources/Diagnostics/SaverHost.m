@@ -137,7 +137,7 @@ static BOOL verifyIndependentSceneContexts(Class principal, NSString *statePath)
         if (!writeFixture(statePath, 1)) { passed = NO; break; }
         NSMutableDictionary *snapshot = [[NSJSONSerialization JSONObjectWithData:
             [NSData dataWithContentsOfFile:statePath] options:0 error:nil] mutableCopy];
-        snapshot[@"world"] = @{ @"weather": @"rain", @"timeMode": @"night",
+        snapshot[@"world"] = @{ @"weather": @"rain", @"weatherMode": @"manual", @"timeMode": @"night",
             @"displayScenes": stage == 0 ? desktop : saver,
             @"screenSaverDisplayScenes": stage == 0 ? saver : desktop };
         NSData *data = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
@@ -321,8 +321,10 @@ int main(int argc, const char *argv[]) {
             }
             printf("PASS: separate writer updated isolated snapshot; saver observed tasks 1 -> 3 -> 0 and independent pending notes 2 -> 4 -> 1\n");
             if (headlessRoundtrip) {
-                if (![diagnostic.diagnosticEffectiveWeather isEqualToString:@"thunderstorm"]) {
-                    fprintf(stderr, "FAIL: overdue pending note did not resolve thunderstorm in actual saver\n"); return 1;
+                NSUInteger weatherSlot = (NSUInteger)([NSDate date].timeIntervalSince1970 / 2700);
+                NSString *randomWeather = diagnostic.diagnosticEffectiveWeather;
+                if (![@[@"clear", @"cloudy", @"rain", @"snow", @"thunderstorm"] containsObject:randomWeather]) {
+                    fprintf(stderr, "FAIL: saver did not resolve a supported random weather state\n"); return 1;
                 }
                 NSMutableDictionary *cleared = [[NSJSONSerialization JSONObjectWithData:
                     [NSData dataWithContentsOfFile:statePath] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
@@ -330,11 +332,19 @@ int main(int argc, const char *argv[]) {
                 NSData *clearedData = [NSJSONSerialization dataWithJSONObject:cleared options:0 error:nil];
                 if (![clearedData writeToFile:statePath options:NSDataWritingAtomic error:nil]) return 1;
                 [diagnostic diagnosticPollState];
+                BOOL sameSlot = weatherSlot == (NSUInteger)([NSDate date].timeIntervalSince1970 / 2700);
                 if (diagnostic.diagnosticPendingNoteCount != 0
-                    || ![diagnostic.diagnosticEffectiveWeather isEqualToString:@"clear"]) {
-                    fprintf(stderr, "FAIL: clearing pending notes did not restore base weather in actual saver\n"); return 1;
+                    || (sameSlot && ![diagnostic.diagnosticEffectiveWeather isEqualToString:randomWeather])) {
+                    fprintf(stderr, "FAIL: clearing pending notes changed random weather in actual saver\n"); return 1;
                 }
-                printf("PASS: saver independently derived thunderstorm from overdue notes and restored clear after handoff\n");
+                cleared[@"world"] = @{ @"weather": @"thunderstorm", @"weatherMode": @"manual", @"timeMode": @"day" };
+                clearedData = [NSJSONSerialization dataWithJSONObject:cleared options:0 error:nil];
+                if (![clearedData writeToFile:statePath options:NSDataWritingAtomic error:nil]) return 1;
+                [diagnostic diagnosticPollState];
+                if (![diagnostic.diagnosticEffectiveWeather isEqualToString:@"thunderstorm"]) {
+                    fprintf(stderr, "FAIL: saver did not preserve the manual weather choice\n"); return 1;
+                }
+                printf("PASS: saver resolved random weather independently of overdue notes and respected manual weather\n");
                 if (!writeFixture(statePath, 3)) return 1;
                 [diagnostic diagnosticPollState];
                 if (diagnostic.diagnosticTaskCount != 3 || diagnostic.diagnosticPendingNoteCount != 4) return 1;

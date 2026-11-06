@@ -143,6 +143,7 @@ import Darwin
         let c = context(viewport.display.size)
         var snapshot = SceneSnapshot.empty(now: now)
         snapshot.mode = .sitting; snapshot.taskOrigin = .simulation; snapshot.world = world
+        snapshot.world?.weatherMode = .manual
         snapshot.tasks = [WorkplaceTask(id: "seam-fixture", title: "检查场景衔接", status: .running, slot: 0)]
         SceneRenderer.draw(in: c, bounds: CGRect(origin: .zero, size: viewport.display.size),
             snapshot: snapshot, time: 0, reduceMotion: true, now: now, background: background, viewport: viewport)
@@ -154,6 +155,7 @@ import Darwin
         let result = context(CGSize(width: 3344, height: 941))
         var snapshot = SceneSnapshot.empty(now: now)
         snapshot.mode = .sitting; snapshot.taskOrigin = .simulation; snapshot.world = world
+        snapshot.world?.weatherMode = .manual
         for (index, display) in pairedDisplays.enumerated() {
             let background = DisplaySceneRouting.background(for: display, among: pairedDisplays,
                 world: world, context: .screenSaver)

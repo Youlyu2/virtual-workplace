@@ -17,6 +17,7 @@ import ImageIO
                           bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)!
         var snapshot = SceneSnapshot.empty(now: date)
         snapshot.mode = .sitting; snapshot.world = world
+        snapshot.world?.weatherMode = .manual
         snapshot.tasks = [WorkplaceTask(id: "fixture", title: "共享世界渲染测试", status: .running, slot: 0)]
         SceneRenderer.draw(in: c, bounds: CGRect(origin: .zero, size: size), snapshot: snapshot,
                            time: time, reduceMotion: reduceMotion, now: date, background: background)

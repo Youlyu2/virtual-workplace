@@ -438,24 +438,16 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
 
     private func refreshWeather(snapshot: SceneSnapshot, at date: Date) {
         let world = snapshot.world ?? SceneWorld()
-        let effect = snapshot.pendingWeatherEffect(at: date)
+        let weather = snapshot.effectiveWorld(at: date).weather
         let text: String
-        if !world.pendingWeatherEnabled {
-            text = "待办天气已关闭 · 当前\(world.weather.title)\n天气保持你设置的基础值。"
-        } else if let reason = effect.reason {
-            text = "待办天气：\(effect.weather.title)\n\(reason)"
-        } else {
-            let pace = world.pendingWeatherPace
-            text = "待办天气：\(effect.weather.title)\n\(Self.duration(pace.cloudyAfter))转阴 · \(Self.duration(pace.rainAfter))下雨 · \(Self.duration(pace.stormAfter))雷雨"
+        switch world.weatherMode {
+        case .random:
+            text = "当前天气：\(weather.title) · 随机轮换\n天气独立变化，不受待办等待时长影响。"
+        case .manual:
+            text = "当前天气：\(weather.title) · 手动固定\n天气保持你的选择，不受待办等待时长影响。"
         }
         if weatherLabel.stringValue != text { weatherLabel.stringValue = text }
         weatherLabel.toolTip = text
-    }
-
-    private static func duration(_ interval: TimeInterval) -> String {
-        let minutes = max(0, Int(interval / 60))
-        if minutes < 60 { return "\(minutes)分钟" }
-        return minutes % 60 == 0 ? "\(minutes / 60)小时" : "\(minutes / 60)小时\(minutes % 60)分钟"
     }
 
     private func setMessage(_ message: String, error: Bool = false) {

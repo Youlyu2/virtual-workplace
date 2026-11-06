@@ -32,9 +32,9 @@ import Darwin
         let c = context(size)
         var snapshot = SceneSnapshot.empty(now: date)
         snapshot.mode = .sitting; snapshot.pendingNotes = notes; snapshot.world = world
-        // These checks isolate visitor geometry/window leakage. The separate
-        // pending-weather suite covers notes intentionally changing scenery.
-        snapshot.world?.pendingWeatherEnabled = false
+        // These checks isolate visitor geometry/window leakage. Random-weather
+        // integration separately covers the shared weather policy.
+        snapshot.world?.weatherMode = .manual
         SceneRenderer.draw(in: c, bounds: CGRect(origin: .zero, size: size), snapshot: snapshot,
             time: uptime, reduceMotion: reduceMotion, now: now, background: background)
         return c

@@ -207,19 +207,27 @@ import AppKit
         weatherSnapshot.world = SceneWorld(weather: .clear, timeMode: .day)
         weatherSnapshot.pendingNotes = [note]
         controller.update(snapshot: weatherSnapshot, error: nil, canUndo: false)
-        expect(weatherLabel.stringValue.contains("晴天") && weatherLabel.stringValue.contains("1小时转阴")
-               && weatherLabel.stringValue.contains("2小时30分钟下雨") && weatherLabel.stringValue.contains("4小时雷雨"),
-               "the note preview explains base weather and the user's chosen thresholds")
+        expect(weatherLabel.stringValue.contains("随机轮换") && weatherLabel.stringValue.contains("不受待办等待时长影响")
+               && !weatherLabel.stringValue.contains("转阴"),
+               "the note preview describes independent random weather without overdue thresholds")
+        let initialWeather = preview.snapshot.effectiveWorld(at: now).weather
         weatherSnapshot.pendingNotes = [PendingNote(id: "weather-overdue", text: "天气等待测试",
             createdAt: now.addingTimeInterval(-5 * 3600))]
         controller.update(snapshot: weatherSnapshot, error: nil, canUndo: false)
-        expect(weatherLabel.stringValue.contains("雷雨") && weatherLabel.stringValue.contains("等待")
+        expect(weatherLabel.stringValue.contains("随机轮换")
+               && preview.snapshot.effectiveWorld(at: now).weather == initialWeather
                && preview.snapshot.world?.weather == .clear,
-               "overdue weather has a visible reason while the original base setting stays in the preview snapshot")
-        weatherSnapshot.world?.pendingWeatherEnabled = false
+               "overdue notes retain the same random calendar and never overwrite manual weather")
+        weatherSnapshot.world?.weatherMode = .manual
+        weatherSnapshot.world?.weather = .rain
         controller.update(snapshot: weatherSnapshot, error: nil, canUndo: false)
-        expect(weatherLabel.stringValue.contains("已关闭") && weatherLabel.stringValue.contains("晴天"),
-               "disabled pending weather is explicitly described as the base weather")
+        expect(weatherLabel.stringValue.contains("手动固定") && weatherLabel.stringValue.contains(WorldWeather.rain.title)
+               && preview.snapshot.effectiveWorld(at: now).weather == .rain,
+               "manual rain stays selected even when a note is overdue")
+        weatherSnapshot.pendingNotes = []
+        controller.update(snapshot: weatherSnapshot, error: nil, canUndo: false)
+        expect(weatherLabel.stringValue.contains("手动固定") && preview.snapshot.effectiveWorld(at: now).weather == .rain,
+               "clearing the inbox does not change the manually selected weather")
         for size in [NSSize(width: 1100, height: 760), NSSize(width: 1000, height: 720)] {
             window.setContentSize(size); root.layoutSubtreeIfNeeded()
             expect(weatherLabel.frame.height > 20 && root.bounds.contains(weatherLabel.convert(weatherLabel.bounds, to: root))
