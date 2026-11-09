@@ -63,6 +63,10 @@ enum OutdoorWorkplaceScene {
         }
         let environment = world.environment(at: date)
         let time = WorldAtmosphere.motionTime(at: date, reduceMotion: reduceMotion)
+        // Clear daylight has neither a tint nor precipitation. Avoid converting
+        // a full foreground image into a clipping mask for an empty pass.
+        let hasEffects = world.weather != .clear
+            || environment.darkness > 0.001 || environment.sunset > 0.001
         c.saveGState(); c.clip(to: bounds)
         c.concatenate(viewport.mapping(into: bounds))
         c.interpolationQuality = .none
@@ -87,26 +91,27 @@ enum OutdoorWorkplaceScene {
                     let uncovered = CGMutablePath(); uncovered.addRect(outside); uncovered.addRect(nativeRect)
                     c.addPath(uncovered); c.clip(using: .evenOdd)
                     c.draw(edge, in: tile)
-                    c.clip(to: tile, mask: edge)
-                    WorldAtmosphere.grade(in: c, rect: tile, environment: environment, weather: world.weather, interior: false)
-                    // Keep the exact native garden particle coordinates while
-                    // clipping to this extension tile. The even-odd clip above
-                    // excludes the main sprite, so no particle is drawn twice.
-                    WorldAtmosphere.precipitation(in: c, rect: outside, weather: world.weather,
-                        time: time, reduceMotion: reduceMotion)
+                    if hasEffects {
+                        c.clip(to: tile, mask: edge)
+                        WorldAtmosphere.grade(in: c, rect: tile, environment: environment, weather: world.weather, interior: false)
+                        // Keep native particle coordinates on extension tiles.
+                        // The even-odd clip excludes the main foreground.
+                        WorldAtmosphere.precipitation(in: c, rect: outside, weather: world.weather,
+                            time: time, reduceMotion: reduceMotion)
+                    }
                     c.restoreGState()
                 }
             }
             c.draw(image, in: nativeRect)
-            c.saveGState(); c.clip(to: nativeRect, mask: image)
-            WorldAtmosphere.grade(in: c, rect: nativeRect, environment: environment, weather: world.weather, interior: false)
-            c.restoreGState()
-            // Precipitation on the distant landscape is already behind these
-            // sprites. Repaint it only on opaque garden pixels, using one clock.
-            c.saveGState(); c.clip(to: nativeRect, mask: image)
-            WorldAtmosphere.precipitation(in: c, rect: outside, weather: world.weather,
-                time: time, reduceMotion: reduceMotion)
-            c.restoreGState()
+            if hasEffects {
+                // Tint and foreground rain share one unchanged RGBA alpha
+                // clip, avoiding a second image-mask conversion per frame.
+                c.saveGState(); c.clip(to: nativeRect, mask: image)
+                WorldAtmosphere.grade(in: c, rect: nativeRect, environment: environment, weather: world.weather, interior: false)
+                WorldAtmosphere.precipitation(in: c, rect: outside, weather: world.weather,
+                    time: time, reduceMotion: reduceMotion)
+                c.restoreGState()
+            }
             c.restoreGState()
         }
         c.restoreGState()

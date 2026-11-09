@@ -74,6 +74,14 @@ enum VirtualWorkplaceMain {
         return arguments[index + 1]
     }
 
+    static func parsedAgentPose(in arguments: [String]) throws -> AgentPose? {
+        guard let raw = value(after: "--agent-pose", in: arguments) else { return nil }
+        guard raw.utf8.count <= 65_536, let patch = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
+            throw AgentPuppetError.invalid("预览姿态需要不超过64KiB的JSON对象")
+        }
+        return try AgentControlInbox.patched(.neutral, with: patch)
+    }
+
     static func renderInterface(output: String, arguments: [String]) {
         let width = max(960, Double(value(after: "--width", in: arguments) ?? "1200") ?? 1200)
         let height = max(640, Double(value(after: "--height", in: arguments) ?? "820") ?? 820)
@@ -84,7 +92,7 @@ enum VirtualWorkplaceMain {
         let appDelegate = WorkplaceAppDelegate(stateURL: nil, launchDemo: false)
         do {
             let report = try appDelegate.renderInterface(output: URL(fileURLWithPath: output), size: NSSize(width: width, height: height), taskCount: count, mode: mode,
-                                                        action: action, actionTime: actionTime)
+                                                        action: action, actionTime: actionTime, agentPose: try parsedAgentPose(in: arguments))
             print(report)
             print(output)
         } catch {
@@ -131,6 +139,14 @@ enum VirtualWorkplaceMain {
         // Explicit render fixtures stay reproducible; --random-weather previews
         // the same absolute-time calendar used by desktop and saver hosts.
         snapshot.world?.weatherMode = arguments.contains("--random-weather") ? .random : .manual
+        do {
+            if let pose = try parsedAgentPose(in: arguments) {
+                snapshot.employeeControlMode = .agent
+                snapshot.agentTimeline = AgentTimeline(startedAt: now, frames: [AgentKeyframe(time: 0, pose: pose)])
+            }
+        } catch {
+            fputs("Agent preview failed: \(error.localizedDescription)\n", stderr); exit(1)
+        }
         let background = value(after: "--background", in: arguments).flatMap(WorkplaceBackground.init(rawValue:)) ?? .room
         if let kind = value(after: "--action", in: arguments).flatMap(EmployeeAction.init(rawValue:)) {
             let actionTime = max(0, Double(value(after: "--action-time", in: arguments) ?? "1") ?? 1)

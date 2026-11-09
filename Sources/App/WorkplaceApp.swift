@@ -93,6 +93,9 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
     private var ambientActionsEnabled = false
     private var actionStatusLabel: NSTextField!
     private var stopActionButton: ActionButton!
+    private var agentControl: AgentControlInbox?
+    private var controlModePicker: NSSegmentedControl?
+    private var gestureButtons: [NSButton] = []
 
     init(stateURL: URL?, launchDemo: Bool, launchWallpaper: Bool = false) {
         self.stateURL = stateURL ?? StateStore.defaultURL
@@ -104,6 +107,8 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let restored = (try? store.read()) ?? .empty()
+        agentControl = AgentControlInbox(directory: stateURL.deletingLastPathComponent(),
+            mode: restored.employeeControlMode ?? .automatic, timeline: restored.agentTimeline)
         notesInbox = PendingNoteInbox(store: PendingNoteStore(url: stateURL.deletingLastPathComponent()
             .appendingPathComponent("pending-notes.json")), fallback: restored.pendingNotes ?? [])
         notesError = notesInbox?.loadError
@@ -144,6 +149,11 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         presentation.onExitImmersive = { [weak self] in self?.openWindow() }
         presentation.onWallpaperChanged = { [weak self] enabled in self?.refreshWallpaperControls(enabled: enabled) }
         ambientActionsEnabled = true
+        agentControl?.onChange = { [weak self] in
+            guard let self else { return }
+            self.currentAction = nil
+            self.update()
+        }
         liveSource?.onChange = { [weak self] in
             guard let self = self, self.usesLiveSource else { return }
             self.update()
@@ -152,6 +162,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         if usesLiveSource { liveSource?.start() }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
+            self.agentControl?.poll(at: Date())
             if self.usesLiveSource { self.liveSource?.tick(at: Date()) }
             else { self.simulator.tick() }
             self.update()
@@ -260,7 +271,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         header.alignment = .centerY
         header.spacing = 10
         let title = label("虚拟工位", size: 24, weight: .semibold)
-        let version = label("PIXEL WORKPLACE  0.9.4", size: 10, weight: .semibold, color: AppPalette.secondary)
+        let version = label("PIXEL WORKPLACE  0.10.0", size: 10, weight: .semibold, color: AppPalette.secondary)
         let titleGroup = NSStackView(views: [title, version])
         titleGroup.orientation = .vertical
         titleGroup.alignment = .leading
@@ -367,7 +378,15 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         actions.orientation = .vertical
         actions.alignment = .leading
         actions.spacing = 5
-        actions.addArrangedSubview(label("手动动作", size: 11, weight: .semibold))
+        let control = NSSegmentedControl(labels: ["自动演出", "Agent 接管"], trackingMode: .selectOne,
+            target: self, action: #selector(controlModeChanged(_:)))
+        control.segmentStyle = .rounded
+        control.setAccessibilityLabel("人物控制模式")
+        control.identifier = NSUserInterfaceItemIdentifier("employee-control-mode")
+        control.toolTip = "Agent 通过本地接口控制关节和表情；任务状态照常同步"
+        control.widthAnchor.constraint(equalToConstant: 212).isActive = true
+        actions.addArrangedSubview(control)
+        controlModePicker = control
         let choices: [(EmployeeAction, String)] = [(.coffee, "cup.and.saucer.fill"), (.stretch, "figure.flexibility"),
                                                   (.wave, "hand.wave.fill"), (.playWithCat, "cat.fill")]
         for first in stride(from: 0, to: choices.count, by: 2) {
@@ -382,6 +401,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
                 button.heightAnchor.constraint(equalToConstant: 24).isActive = true
                 button.setAccessibilityLabel(kind.title)
                 button.toolTip = "播放\(kind.title)动作，结束后恢复原状态"
+                gestureButtons.append(button)
                 row.addArrangedSubview(button)
             }
             actions.addArrangedSubview(row)
@@ -493,6 +513,8 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         snapshot.action = currentAction.flatMap { $0.isActive(at: Date()) ? $0 : nil }
         snapshot.world = world
         snapshot.pendingNotes = notesInbox?.notes ?? []
+        snapshot.employeeControlMode = agentControl?.mode
+        snapshot.agentTimeline = agentControl?.timeline
         return snapshot
     }
 
@@ -579,7 +601,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
 
     private func update(persist: Bool = true) {
         if let action = currentAction, !action.isActive(at: Date()) { currentAction = nil }
-        if ambientActionsEnabled, persist {
+        if ambientActionsEnabled, persist, agentControl?.mode != .agent {
             let now = Date()
             if let action = ambientMotion.poll(snapshot: currentSnapshot, currentAction: currentAction,
                                                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
@@ -617,7 +639,13 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         demoButton.image = NSImage(systemSymbolName: snapshot.demoRunning ? "stop.fill" : "play.fill", accessibilityDescription: demoButton.title)
         demoProgress.isHidden = usesLiveSource || !snapshot.demoRunning
         demoProgress.doubleValue = usesLiveSource ? 0 : simulator.demoProgress
-        actionStatusLabel.stringValue = snapshot.action.map { "正在\($0.kind.title)" } ?? "自动模式下偶尔起身溜达"
+        let agentOwned = agentControl?.mode == .agent
+        controlModePicker?.selectedSegment = agentOwned ? 1 : 0
+        gestureButtons.forEach { $0.isEnabled = !agentOwned }
+        modePicker.isEnabled = !agentOwned
+        actionStatusLabel.stringValue = agentOwned ? "Agent 接管 · 本地关节与表情控制"
+            : snapshot.action.map { "正在\($0.kind.title)" } ?? "自动模式下偶尔起身溜达"
+        actionStatusLabel.toolTip = agentOwned ? agentControl?.lastError ?? "Agent 可控制关节、朝向与表情；切回自动演出可立即收回控制。" : nil
         actionStatusLabel.textColor = snapshot.action == nil ? AppPalette.secondary : AppPalette.green
         stopActionButton.isHidden = snapshot.action == nil
         switch snapshot.resolvedActivity() {
@@ -626,6 +654,11 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         case .resting: activityLabel.stringValue = "☕ 现在是摸鱼时间"; activityLabel.textColor = AppPalette.secondary
         case .offline: activityLabel.stringValue = "○ 工位暂时离线"; activityLabel.textColor = AppPalette.secondary
         }
+        if agentOwned {
+            activityLabel.stringValue = "● 人物由本地 Agent 控制"
+            activityLabel.textColor = AppPalette.green
+        }
+        modePicker.toolTip = agentOwned ? "切回自动演出后，可继续选择工作姿势。" : nil
         // Progress changes every second; rebuilding controls would dismiss a
         // status menu while the user is choosing an item.
         let connected = usesLiveSource ? liveSource?.isConnected : nil
@@ -661,8 +694,12 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
     /// Exercises the production view hierarchy without ordering a window on screen,
     /// starting the simulator timer, touching the state file, or creating a status item.
     func renderInterface(output: URL?, size: NSSize, taskCount: Int, mode: EmployeeMode,
-                         action: EmployeeAction? = nil, actionTime: TimeInterval = 0) throws -> String {
+                         action: EmployeeAction? = nil, actionTime: TimeInterval = 0, agentPose: AgentPose? = nil) throws -> String {
         usesLiveSource = false
+        if let agentPose {
+            agentControl = AgentControlInbox(directory: FileManager.default.temporaryDirectory.appendingPathComponent("Agent-Preview-\(UUID().uuidString)"),
+                mode: .agent, timeline: AgentTimeline(startedAt: Date(), frames: [AgentKeyframe(time: 0, pose: agentPose)]))
+        }
         simulator = TaskSimulator()
         for _ in 0..<min(6, max(0, taskCount)) { simulator.addTask() }
         simulator.setMode(mode)
@@ -819,7 +856,13 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
         update()
     }
 
+    @objc private func controlModeChanged(_ sender: NSSegmentedControl) {
+        guard (0...1).contains(sender.selectedSegment) else { return }
+        agentControl?.setMode(sender.selectedSegment == 1 ? .agent : .automatic)
+    }
+
     private func playAction(_ kind: EmployeeAction) {
+        guard agentControl?.mode != .agent else { return }
         ambientMotion.postpone(at: Date())
         currentAction = SceneAction(kind: kind, startedAt: Date())
         update()
@@ -834,6 +877,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
     }
 
     @objc private func modeChanged() {
+        guard agentControl?.mode != .agent else { return }
         let modes: [EmployeeMode] = [.automatic, .sitting, .slacking, .standing]
         guard modes.indices.contains(modePicker.selectedSegment) else { return }
         currentAction = nil
@@ -964,7 +1008,7 @@ final class WorkplaceAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
 
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "虚拟工位 0.9.4"
+        alert.messageText = "虚拟工位 0.10.0"
         alert.informativeText = "把任务交给工位里的自己。\n\nCodex 实时任务与模拟演示可切换。\n实时模式只读同步本机与已连接开发机的会话，未知进度不显示百分比。\n支持独立窗口、桌面背景和 macOS 系统屏保。"
         alert.addButton(withTitle: "继续上班")
         alert.runModal()

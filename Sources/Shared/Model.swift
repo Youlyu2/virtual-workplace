@@ -286,6 +286,10 @@ struct SceneSnapshot: Codable, Equatable {
     var sourceMessage: String? = nil
     var totalSessionCount: Int? = nil
     var action: SceneAction? = nil
+    /// Missing in older snapshots means the original automatic controller.
+    var employeeControlMode: EmployeeControlMode? = nil
+    /// One finite, absolute-time pose trajectory shared with read-only hosts.
+    var agentTimeline: AgentTimeline? = nil
     /// Missing in earlier snapshots; hosts then use the original room defaults.
     var world: SceneWorld? = nil
     /// Personal notes never occupy a Codex task slot or drive employee posture.

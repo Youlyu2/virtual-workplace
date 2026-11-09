@@ -11,11 +11,12 @@ xcuserdata/
 !.env.example
 /state.json
 /world-settings.json
-/pending-notes.json
 /Backups/
 *.log
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-*.p12
-*.p8
+
+# Local avatar control mailbox and Python bytecode.
+/agent-command.json
+/agent-result.json
+/agent-status.json
+/agent-client.lock
+__pycache__/

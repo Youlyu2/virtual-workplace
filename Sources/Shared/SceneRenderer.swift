@@ -100,7 +100,8 @@ enum SceneRenderer {
             ?? SceneFrame(standing: snapshot.resolvedPose(at: now) == .standing ? 1 : 0,
                           slacking: snapshot.resolvedPose(at: now) == .slacking ? 1 : 0,
                           screens: snapshot.tasks.sorted { $0.slot < $1.slot }.map { ($0, 1) })
-        let action = snapshot.action.flatMap { $0.isActive(at: now) ? $0 : nil }
+        if snapshot.employeeControlMode == .agent { frame.standing = 0; frame.slacking = 0 }
+        let action = snapshot.employeeControlMode == .agent ? nil : snapshot.action.flatMap { $0.isActive(at: now) ? $0 : nil }
         let progress = action.map { CGFloat($0.progress(at: now)) }
         var actionBlend: CGFloat = 0
         if let action {

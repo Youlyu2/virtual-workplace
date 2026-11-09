@@ -24,7 +24,7 @@
 
 ![虚拟工位动态演示：坐着打工、升降桌站姿与躺床摸鱼](docs/images/showcase.gif)
 
-<p align="center"><sub>源码版本 0.9.4 · 以下展示均使用模拟会话和示例便签。</sub></p>
+<p align="center"><sub>源码版本 0.10.0 原型 · 以下展示均使用模拟会话和示例便签。</sub></p>
 
 > **0.9.3 更新：**修复 Codex 实时同步长时间运行时的内存持续增长。旧版用户请更新并重启应用。[修复与内存复验说明](docs/MEMORY.md)
 
@@ -46,6 +46,22 @@
 </table>
 
 你可以随时切换姿势，也可以让任务状态驱动分身。工作久了，它会起身在房间里溜达一圈，沿上下左右转弯，再回到工位。想让小屋热闹一点，就点一下喝咖啡、伸懒腰、挥手或逗猫；橘白猫也会醒来、甩尾、走几步，再找地方趴下。
+
+## 把人物交给 Agent，动作由它自己安排
+
+切换到「Agent 接管」，本地 Agent 就能直接设置肩、肘、腕、髋、膝和头身角度，组合眉眼嘴参数，并规划未来数秒的任意关键帧。像素小人可以转身、弯腿、抬手、改变表情；任务屏幕、待办和天气继续独立更新。
+
+![连续关节与表情参数的采样效果，非预设动作列表](docs/images/agent-joints.png)
+
+这些是任意数值的采样效果。控制接口接受连续参数，保留「自动演出」供随时切回。当前0.10.0原型通过本地CLI连接能在Mac上执行命令的Agent；应用内部的模型API调用与后台模型循环尚未接入。[本地控制说明与示例](docs/AGENT_CONTROL.md)
+
+```sh
+python3 scripts/workplace-agent.py mode agent
+python3 scripts/workplace-agent.py pose '{"facing":"front","joints":{"leftShoulder":-73.5,"rightElbow":42.25},"face":{"mouth":0.8}}' --duration 2
+python3 scripts/workplace-agent.py mode automatic
+```
+
+庭院绘制还移除了空遮罩和重复裁切。离屏CPU耗时的改善与真实GPU占用分别验证，[详见性能说明](docs/PERFORMANCE.md)。此分支已完成构建与隔离检查，实际应用接管和系统屏保同步尚待现场验收。
 
 ## 一段 Codex 会话，点亮一块实体屏幕
 

@@ -56,6 +56,10 @@ struct StateStore {
             do { try PendingNote.validate(notes) }
             catch { throw StateStoreError.invalidSnapshot("待办内容不合法：\(error.localizedDescription)") }
         }
+        if let timeline = snapshot.agentTimeline {
+            do { try timeline.validate() }
+            catch { throw StateStoreError.invalidSnapshot("Agent 姿态轨迹不合法：\(error.localizedDescription)") }
+        }
         guard snapshot.tasks.count <= 6 else { throw StateStoreError.invalidSnapshot("会话数量超过六个") }
         guard Set(snapshot.tasks.map(\.id)).count == snapshot.tasks.count,
               Set(snapshot.tasks.map(\.slot)).count == snapshot.tasks.count else {

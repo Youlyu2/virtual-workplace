@@ -73,58 +73,64 @@ enum FullscreenWorkplaceScene {
             }
         }
         desktop(c, rise: rise)
-        let inputActivity: EmployeeActivity = actionProgress == nil ? snapshot.resolvedActivity(at: now) : .waiting
+        let inputActivity: EmployeeActivity = actionProgress == nil && snapshot.employeeControlMode != .agent ? snapshot.resolvedActivity(at: now) : .waiting
         inputDevices(c, rise: rise, motion: WorkInputMotion.sample(time: time, activity: inputActivity))
         // The tabletop asset includes foreground props. Desk stands must be
         // above the wood, while screen bodies remain behind those props.
         for slot in 0..<3 { monitorMount(c, slot: slot, rise: rise) }
-        let resting = max(0, min(1, frame.slacking))
-        let usesWalking = snapshot.action?.kind == .walk || snapshot.action?.kind == .playWithCat
-        let gestureAvailable = EmployeeActionSprites.isAvailable && (!usesWalking || PixelWalkingSprites.isAvailable)
-        let gestureBlend = gestureAvailable ? actionBlend : 0
-        c.saveGState(); c.setAlpha((1 - resting) * (1 - gestureBlend))
-        PixelEmployee.drawWorking(in: c, standing: frame.standing, time: time,
-                                  activity: inputActivity, feet: CGPoint(x: 835, y: 270), pixelSize: 6)
-        c.restoreGState()
-        if PixelEmployee.hasSprites {
-            c.saveGState(); c.setAlpha(resting + (1 - resting) * max(frame.standing, actionBlend))
-            PixelEmployee.drawEmptyChair(in: c, standing: frame.standing, feet: CGPoint(x: 835, y: 270), pixelSize: 6)
+        if snapshot.employeeControlMode == .agent {
+            PixelEmployee.drawEmptyChair(in: c, standing: 1, feet: CGPoint(x: 835, y: 270), pixelSize: 6)
+            let pose = snapshot.agentTimeline?.sample(at: now, reduceMotion: reduceMotion) ?? .neutral
+            PixelAgentPuppet.draw(in: c, pose: pose)
+        } else {
+            let resting = max(0, min(1, frame.slacking))
+            let usesWalking = snapshot.action?.kind == .walk || snapshot.action?.kind == .playWithCat
+            let gestureAvailable = EmployeeActionSprites.isAvailable && (!usesWalking || PixelWalkingSprites.isAvailable)
+            let gestureBlend = gestureAvailable ? actionBlend : 0
+            c.saveGState(); c.setAlpha((1 - resting) * (1 - gestureBlend))
+            PixelEmployee.drawWorking(in: c, standing: frame.standing, time: time,
+                                      activity: inputActivity, feet: CGPoint(x: 835, y: 270), pixelSize: 6)
             c.restoreGState()
-        } else { chair(c, standing: frame.standing) }
-        if let progress = actionProgress, let action = snapshot.action, gestureBlend > 0.005 {
-            var feet = CGPoint(x: 835, y: 270)
-            var walkSample: EmployeeWalkSample?
-            if action.kind == .walk {
-                let sample = AmbientEmployeeMotion.walkSample(progress: reduceMotion ? 0 : progress)
-                feet = sample.feet; walkSample = sample
-            }
-            if action.kind == .playWithCat {
-                let sample = AmbientEmployeeMotion.catVisitSample(progress: reduceMotion ? 0.5 : progress)
-                feet = sample.feet
-                if sample.isMoving || (!reduceMotion && (progress < 0.35 || progress > 0.65)) {
-                    walkSample = sample
+            if PixelEmployee.hasSprites {
+                c.saveGState(); c.setAlpha(resting + (1 - resting) * max(frame.standing, actionBlend))
+                PixelEmployee.drawEmptyChair(in: c, standing: frame.standing, feet: CGPoint(x: 835, y: 270), pixelSize: 6)
+                c.restoreGState()
+            } else { chair(c, standing: frame.standing) }
+            if let progress = actionProgress, let action = snapshot.action, gestureBlend > 0.005 {
+                var feet = CGPoint(x: 835, y: 270)
+                var walkSample: EmployeeWalkSample?
+                if action.kind == .walk {
+                    let sample = AmbientEmployeeMotion.walkSample(progress: reduceMotion ? 0 : progress)
+                    feet = sample.feet; walkSample = sample
                 }
+                if action.kind == .playWithCat {
+                    let sample = AmbientEmployeeMotion.catVisitSample(progress: reduceMotion ? 0.5 : progress)
+                    feet = sample.feet
+                    if sample.isMoving || (!reduceMotion && (progress < 0.35 || progress > 0.65)) {
+                        walkSample = sample
+                    }
+                }
+                c.saveGState(); c.setAlpha(gestureBlend)
+                if let sample = walkSample {
+                    _ = PixelWalkingSprites.draw(in: c, direction: sample.direction, distance: sample.distance,
+                                                 isMoving: !reduceMotion && sample.isMoving, feet: feet, pixelSize: 6)
+                } else {
+                    // The prop pose only appears after the employee reaches the
+                    // cat. Travel uses the same directional gait as a normal walk.
+                    let gestureProgress = action.kind == .playWithCat && !reduceMotion
+                        ? max(0, min(1, (progress - 0.35) / 0.30)) : progress
+                    _ = EmployeeActionSprites.draw(in: c, kind: action.kind, progress: gestureProgress,
+                                                   time: reduceMotion ? 0 : time,
+                                                   feet: feet, pixelSize: 6)
+                }
+                c.restoreGState()
             }
-            c.saveGState(); c.setAlpha(gestureBlend)
-            if let sample = walkSample {
-                _ = PixelWalkingSprites.draw(in: c, direction: sample.direction, distance: sample.distance,
-                                             isMoving: !reduceMotion && sample.isMoving, feet: feet, pixelSize: 6)
-            } else {
-                // The prop pose only appears after the employee reaches the
-                // cat. Travel uses the same directional gait as a normal walk.
-                let gestureProgress = action.kind == .playWithCat && !reduceMotion
-                    ? max(0, min(1, (progress - 0.35) / 0.30)) : progress
-                _ = EmployeeActionSprites.draw(in: c, kind: action.kind, progress: gestureProgress,
-                                               time: reduceMotion ? 0 : time,
-                                               feet: feet, pixelSize: 6)
+            if resting > 0.005 {
+                c.saveGState(); c.setAlpha(resting)
+                PixelEmployee.drawSleeping(in: c, time: time, headCenter: CGPoint(x: min(1540, visibleRect.maxX - 53), y: 468), pixelSize: 5)
+                PixelEmployee.drawSleepBubble(in: c, time: time, origin: CGPoint(x: min(1455, visibleRect.maxX - 162), y: 549), pixelSize: 4)
+                c.restoreGState()
             }
-            c.restoreGState()
-        }
-        if resting > 0.005 {
-            c.saveGState(); c.setAlpha(resting)
-            PixelEmployee.drawSleeping(in: c, time: time, headCenter: CGPoint(x: min(1540, visibleRect.maxX - 53), y: 468), pixelSize: 5)
-            PixelEmployee.drawSleepBubble(in: c, time: time, origin: CGPoint(x: min(1455, visibleRect.maxX - 162), y: 549), pixelSize: 4)
-            c.restoreGState()
         }
         if RoomAssets.usesFlatForeground || RoomAssets.rugPatch != nil {
             PixelCat.draw(in: c, time: time,
@@ -515,7 +521,8 @@ enum FullscreenWorkplaceScene {
         let r = CGRect(x: 585, y: 32, width: 516, height: 35)
         panel(c, r, edge: tint(0x54371F, alpha: 0.8), fill: tint(0xE9C180, alpha: 0.94), border: 3)
         let status: String
-        if let title = actionTitle { status = "\(title) · 小憩片刻，任务状态照常同步" }
+        if snapshot.employeeControlMode == .agent { status = "Agent 接管 · 关节和表情由本地指令控制" }
+        else if let title = actionTitle { status = "\(title) · 小憩片刻，任务状态照常同步" }
         else if !snapshot.isFresh() { status = snapshot.taskOrigin == .codex ? "Codex 未连接 · 分身休息中" : "工位离线 · 分身休息中" }
         else if snapshot.demoRunning { status = "模拟演示 · 每 60 秒循环 · 菜单栏可返回控制台" }
         else if snapshot.taskOrigin == .codex {
