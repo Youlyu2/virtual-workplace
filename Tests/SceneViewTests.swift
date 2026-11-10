@@ -32,6 +32,15 @@ struct SceneViewTests {
         let target = reference(active, bounds: bounds)
         assertTitleMatches(actual: actual, expected: target, bounds: bounds)
 
+        var controlled = active
+        controlled.employeeControlMode = .agent
+        view.snapshot = controlled
+        expect((view.accessibilityValue() as? String)?.hasPrefix("Agent 接管") == true,
+               "accessible scene describes Agent ownership instead of an automatic sitting pose")
+        view.snapshot = active
+        expect((view.accessibilityValue() as? String)?.hasPrefix("坐着打工") == true,
+               "accessible scene returns to automatic posture after release")
+
         view.isHidden = true
         view.needsDisplay = false
         view.snapshot = .empty()

@@ -9,7 +9,10 @@
 @property (readonly) BOOL diagnosticIsOnline;
 @property (readonly) BOOL diagnosticUsesCartoonCharacter;
 @property (readonly) NSString *diagnosticBackground;
+@property (readonly) BOOL diagnosticHasStartRequest;
+@property (readonly) NSArray<NSString *> *diagnosticSystemDismissalNames;
 - (void)diagnosticPollState;
+- (void)diagnosticSystemDismissal:(NSString *)name;
 @end
 
 @interface DiagnosticSaverWindow : NSWindow
@@ -51,6 +54,40 @@ static BOOL waitForAnimation(ScreenSaverView *view, BOOL expected) {
         if (view.isAnimating == expected) return YES;
     } while (deadline.timeIntervalSinceNow > 0);
     return NO;
+}
+
+static BOOL verifySystemDismissalRequests(ScreenSaverView *view) {
+    if (![view respondsToSelector:@selector(diagnosticSystemDismissal:)]
+            || ![view respondsToSelector:@selector(diagnosticHasStartRequest)]
+            || ![view respondsToSelector:@selector(diagnosticSystemDismissalNames)]) {
+        fprintf(stderr, "FAIL: rebuild saver to include system-dismissal diagnostics\n");
+        return NO;
+    }
+    id<WorkplaceSaverDiagnostics> probe = (id<WorkplaceSaverDiagnostics>)view;
+    NSArray<NSString *> *names = probe.diagnosticSystemDismissalNames;
+    if (names.count != 3) return NO;
+    for (NSString *name in names) {
+        [view startAnimation];
+        if (!probe.diagnosticHasStartRequest) return NO;
+        [probe diagnosticSystemDismissal:@"diagnostic.unknown"];
+        if (!probe.diagnosticHasStartRequest) return NO;
+        [probe diagnosticSystemDismissal:name];
+        if (probe.diagnosticHasStartRequest || view.isAnimating) return NO;
+        [probe diagnosticSystemDismissal:name]; // Duplicate delivery is harmless.
+        [probe diagnosticPollState];
+        if (probe.diagnosticHasStartRequest || view.isAnimating) return NO;
+        [view startAnimation];
+        if (!probe.diagnosticHasStartRequest) return NO;
+        [view stopAnimation];
+    }
+    [view startAnimation];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+        [probe diagnosticSystemDismissal:names.firstObject];
+    });
+    advanceRunLoop(0.1);
+    if (probe.diagnosticHasStartRequest || view.isAnimating) return NO;
+    printf("PASS: 16 isolated system-dismissal checks (no distributed events broadcast)\n");
+    return YES;
 }
 
 static BOOL waitForCount(id<WorkplaceSaverDiagnostics> view, NSInteger expected, BOOL explicitlyPoll) {
@@ -215,6 +252,10 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "Cannot initialize screen saver principal class\n");
             return 1;
         }
+        if (!verifySystemDismissalRequests(view)) {
+            fprintf(stderr, "FAIL: system dismissal did not revoke playback until a fresh host request\n");
+            return 1;
+        }
         if (![view respondsToSelector:@selector(diagnosticUsesCartoonCharacter)]
                 || ![(id<WorkplaceSaverDiagnostics>)view diagnosticUsesCartoonCharacter]) {
             fprintf(stderr, "FAIL: actual saver bundle did not load the cartoon character asset\n");
@@ -254,6 +295,24 @@ int main(int argc, const char *argv[]) {
                     fprintf(stderr, "FAIL: animation did not stop (cycle %lu)\n", cycle);
                     return 1;
                 }
+                lifecycleChecks++;
+            }
+            id<WorkplaceSaverDiagnostics> dismissalProbe = (id<WorkplaceSaverDiagnostics>)view;
+            for (NSString *name in dismissalProbe.diagnosticSystemDismissalNames) {
+                [view startAnimation];
+                if (!waitForAnimation(view, YES)) return 1;
+                lifecycleChecks++;
+                [dismissalProbe diagnosticSystemDismissal:name];
+                if (!waitForAnimation(view, NO)) {
+                    fprintf(stderr, "FAIL: system dismissal left an animation timer running\n"); return 1;
+                }
+                lifecycleChecks++;
+                [dismissalProbe diagnosticPollState];
+                advanceRunLoop(0.05);
+                if (view.isAnimating || dismissalProbe.diagnosticHasStartRequest) return 1;
+                lifecycleChecks++;
+                [view startAnimation];
+                if (!waitForAnimation(view, YES)) return 1;
                 lifecycleChecks++;
             }
             [view startAnimation];
@@ -389,7 +448,7 @@ int main(int argc, const char *argv[]) {
                 fprintf(stderr, "FAIL: closing window kept animating\n"); return 1;
             }
             lifecycleChecks++;
-            printf("PASS: %lu lifecycle checks (10 start/stop cycles, hidden stop + host show/start, screen sleep/wake, close)\n", lifecycleChecks);
+            printf("PASS: %lu lifecycle checks (10 start/stop cycles, system-dismissal stop/restart, hidden stop + host show/start, screen sleep/wake, close)\n", lifecycleChecks);
         }
         [window orderOut:nil];
         [window close];

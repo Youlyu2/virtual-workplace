@@ -20,6 +20,15 @@ final class VirtualWorkplaceSaverView: ScreenSaverView {
     private let diagnosticInstance = String(UUID().uuidString.prefix(8))
     private var lifecycleStates: [String: String] = [:]
     private var loggedInitialDraw = false
+    // Supplement the host callbacks: some legacy remote hosts retain their
+    // exported window and omit stopAnimation after the saver is dismissed.
+    // These system notifications can only revoke playback, never start it.
+    private static let systemDismissalNames = [
+        "com.apple.screensaver.willstop",
+        "com.apple.screensaver.didstop",
+        "com.apple.screenIsUnlocked"
+    ].map { Notification.Name($0) }
+    private let systemDismissalCenter = DistributedNotificationCenter.default()
 
     override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
@@ -33,6 +42,7 @@ final class VirtualWorkplaceSaverView: ScreenSaverView {
 
     deinit {
         observerTokens.forEach { $0.0.removeObserver($0.1) }
+        systemDismissalCenter.removeObserver(self)
     }
 
     private func configure() {
@@ -40,6 +50,10 @@ final class VirtualWorkplaceSaverView: ScreenSaverView {
         lastValidSnapshot.isOnline = false
         logger.info("Created screen saver; read-only state path: \(StateStore.defaultURL.path, privacy: .public)")
         logLifecycle("configure")
+        for name in Self.systemDismissalNames {
+            systemDismissalCenter.addObserver(self, selector: #selector(systemDidDismiss(_:)),
+                name: name, object: nil, suspensionBehavior: .deliverImmediately)
+        }
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         observe(workspaceCenter, NSWorkspace.screensDidSleepNotification) { [weak self] in
             self?.screenSleeping = true
@@ -97,6 +111,25 @@ final class VirtualWorkplaceSaverView: ScreenSaverView {
     override func stopAnimation() {
         startRequested = false
         logLifecycle("stopAnimation entry")
+        reconcileAnimation()
+    }
+
+    @objc private func systemDidDismiss(_ notification: Notification) {
+        guard Self.systemDismissalNames.contains(notification.name) else { return }
+        let name = notification.name.rawValue
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.stopAfterSystemDismissal(name) }
+            return
+        }
+        stopAfterSystemDismissal(name)
+    }
+
+    private func stopAfterSystemDismissal(_ name: String) {
+        // Coalesce willstop/didstop/unlock. State polling and visibility events
+        // cannot resume this instance; only a new host startAnimation can.
+        guard startRequested || isAnimating else { return }
+        startRequested = false
+        logLifecycle("system dismissal", extra: "notification=\(name)")
         reconcileAnimation()
     }
 
@@ -238,6 +271,13 @@ final class VirtualWorkplaceSaverView: ScreenSaverView {
     @objc var diagnosticIsOnline: Bool { lastValidSnapshot.isFresh() }
     @objc var diagnosticUsesCartoonCharacter: Bool { SceneRenderer.hasRoomAssets }
     @objc var diagnosticBackground: String { renderedBackground.rawValue }
+    @objc var diagnosticHasStartRequest: Bool { startRequested }
+    @objc var diagnosticSystemDismissalNames: [String] { Self.systemDismissalNames.map(\.rawValue) }
+    @objc func diagnosticSystemDismissal(_ name: String) {
+        // Invoke the production handler without broadcasting a system event to
+        // other apps or the actual screen saver host.
+        systemDidDismiss(Notification(name: Notification.Name(name)))
+    }
     @objc func diagnosticPollState() {
         pollState(at: ProcessInfo.processInfo.systemUptime)
         needsDisplay = true

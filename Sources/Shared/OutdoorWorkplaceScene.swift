@@ -11,6 +11,12 @@ enum OutdoorWorkplaceScene {
     private static let dateFormat: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "HH:mm"; return f
     }()
+    /// Preserve the original RGBA mask pixels, but avoid reconverting the
+    /// panorama's known-empty margins into an alpha clip on every frame.
+    private struct BackdropMask {
+        let image: CGImage
+        let bounds: CGRect
+    }
     private static let skyMask = mask { r, g, b, row, height in
         row < Int(Double(height) * 0.25) && b > 180 && g > 125 && b > g && g > r
     }
@@ -151,7 +157,7 @@ enum OutdoorWorkplaceScene {
         let time = WorldAtmosphere.motionTime(at: date, reduceMotion: reduceMotion)
         WorldAtmosphere.grade(in: c, rect: canvas, environment: environment, weather: world.weather, interior: false)
         c.saveGState()
-        if let skyMask { c.clip(to: canvas, mask: skyMask) }
+        if let skyMask { c.clip(to: skyMask.bounds, mask: skyMask.image) }
         let sky = CGRect(x: 0, y: canvas.height * 0.78, width: canvas.width, height: canvas.height * 0.22)
         WorldAtmosphere.celestial(in: c, sky: sky, environment: environment, weather: world.weather, time: time)
         WorldAtmosphere.clouds(in: c, rect: sky, weather: world.weather, environment: environment, time: time)
@@ -191,7 +197,7 @@ enum OutdoorWorkplaceScene {
     private static func water(in c: CGContext, canvas: CGRect, environment: WorldEnvironment,
                               time: Double, weather: WorldWeather) {
         guard let riverMask else { return }
-        c.saveGState(); c.clip(to: canvas, mask: riverMask); c.setShouldAntialias(false)
+        c.saveGState(); c.clip(to: riverMask.bounds, mask: riverMask.image); c.setShouldAntialias(false)
         let alpha = CGFloat(0.14 + environment.daylight * 0.19)
             * (weather == .thunderstorm ? 0.30 : weather == .rain ? 0.45 : 1)
         for i in 0..<168 {
@@ -237,7 +243,7 @@ enum OutdoorWorkplaceScene {
 
     /// Masks are computed once from the shared panorama, before any night tint.
     /// Moving clouds and reflections then stay behind the painted silhouettes.
-    private static func mask(_ predicate: (Int, Int, Int, Int, Int) -> Bool) -> CGImage? {
+    private static func mask(_ predicate: (Int, Int, Int, Int, Int) -> Bool) -> BackdropMask? {
         guard let image = artwork else { return nil }
         let w = image.width, h = image.height
         guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
@@ -245,13 +251,26 @@ enum OutdoorWorkplaceScene {
             bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue),
               let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
         context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var minX = w, minRow = h, maxX = -1, maxRow = -1
         for row in 0..<h {
             for x in 0..<w {
                 let i = (row * w + x) * 4
                 let alpha: UInt8 = predicate(Int(pixels[i]), Int(pixels[i + 1]), Int(pixels[i + 2]), row, h) ? 255 : 0
+                if alpha != 0 {
+                    minX = min(minX, x); maxX = max(maxX, x)
+                    minRow = min(minRow, row); maxRow = max(maxRow, row)
+                }
                 pixels[i] = alpha; pixels[i + 1] = alpha; pixels[i + 2] = alpha; pixels[i + 3] = alpha
             }
         }
-        return context.makeImage()
+        guard let fullImage = context.makeImage() else { return nil }
+        guard maxX >= minX, maxRow >= minRow,
+              let image = fullImage.cropping(to: CGRect(x: minX, y: minRow,
+                  width: maxX - minX + 1, height: maxRow - minRow + 1)) else {
+            return BackdropMask(image: fullImage, bounds: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+        return BackdropMask(image: image,
+            bounds: CGRect(x: minX, y: h - maxRow - 1,
+                width: maxX - minX + 1, height: maxRow - minRow + 1))
     }
 }

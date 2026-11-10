@@ -64,6 +64,10 @@ final class WorkplaceSceneView: NSView {
             let waiting = notes.isEmpty ? "门外暂无待办" : "\(notes.count) 位访客等待交办"
             setAccessibilityValue("窗外风景，\(world.weather.title)，\(world.environment(at: Date()).title)，\(waiting)")
         } else {
+            if snapshot.employeeControlMode == .agent {
+                setAccessibilityValue("Agent 接管，关节与表情由本地指令控制，\(snapshot.tasks.count) 个会话，\(world.weather.title)")
+                return
+            }
             let pose = snapshot.resolvedPose()
             let title = pose == .standing ? "站着打工" : pose == .sitting ? "坐着打工" : "摸鱼"
             let origin = snapshot.taskOrigin == .codex ? "Codex" : "模拟"
