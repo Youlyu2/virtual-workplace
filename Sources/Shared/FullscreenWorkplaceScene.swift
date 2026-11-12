@@ -9,13 +9,6 @@ enum FullscreenWorkplaceScene {
     private static let paper = tint(0xF5DBA6)
     private static let glow = tint(0xC4E4D2)
     private static let waitingGlow = tint(0x8FBFEA)
-    private static let dateFormat: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 EEEE"; return f
-    }()
-    private static let timeFormat: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "HH:mm"; return f
-    }()
-
     /// The approved room has three permanent displays. Extra sessions add the
     /// upper row, while vacant desk displays keep useful overview information.
     static func displaySlots(for frame: SceneFrame) -> [Int] {
@@ -27,12 +20,12 @@ enum FullscreenWorkplaceScene {
                      actionBlend: CGFloat = 0, reduceMotion: Bool = false, now: Date = Date(),
                      viewport: WorldViewport = .companion(for: .room), worldBounds: CGRect? = nil) {
         c.interpolationQuality = .none
+        let world = snapshot.world ?? SceneWorld()
         if let bg = RoomAssets.background { c.draw(bg, in: CGRect(origin: .zero, size: size)) }
         else { fallbackRoom(c) }
         if let rug = RoomAssets.rugPatch {
             c.draw(rug, in: CGRect(x: 500, y: 55, width: 220, height: 135))
         }
-        let world = snapshot.world ?? SceneWorld()
         let nightBlend = world.environment(at: now).darkness
         if let night = RoomAssets.nightBackground, nightBlend > 0 {
             c.saveGState(); c.setAlpha(CGFloat(nightBlend))
@@ -437,7 +430,7 @@ enum FullscreenWorkplaceScene {
     }
 
     private static func wallBoard(_ c: CGContext, snapshot: SceneSnapshot) {
-        let now = Date(), online = snapshot.isFresh(at: now)
+        let now = Date()
         c.saveGState()
         if RoomAssets.usesFlatForeground { c.translateBy(x: 45, y: 0) }
         // All content is anchored to the painted board's inner paper area.
@@ -447,20 +440,14 @@ enum FullscreenWorkplaceScene {
         boardText("今日进展", in: c, rect: CGRect(x: 1240, y: 832, width: 166, height: 31),
                   size: 22, weight: .semibold, alignment: .center)
         block(c, CGRect(x: 1245, y: 826, width: 155, height: 1), tint(0xAD783C, alpha: 0.4))
-        let completed = snapshot.summaryDay.map { Calendar.current.isDate($0, inSameDayAs: now) } == true
-            ? (snapshot.completedToday ?? 0) : 0
-        let entries: [(String, Int, NSColor)] = [
-            ("工作中", online ? snapshot.tasks.filter { $0.status == .running }.count : 0, tint(0x419F61)),
-            ("等待确认", snapshot.tasks.filter { $0.status == .waiting }.count, tint(0x3D6FA2)),
-            ("需处理", snapshot.tasks.filter { $0.status == .failed }.count, tint(0xB95736)),
-            ("已完成", completed, tint(0x5D8760))
-        ]
+        let entries = SceneReadouts.todayProgress(snapshot, at: now)
+        let colors = [tint(0x419F61), tint(0x3D6FA2), tint(0xB95736), tint(0x5D8760)]
         for (index, entry) in entries.enumerated() {
             let centerY: CGFloat = 806 - CGFloat(index) * 30
             let rowInk = index == 1 ? tint(0x284D78) : ink
-            block(c, CGRect(x: 1245, y: centerY - 4, width: 9, height: 9), entry.2)
-            boardText(entry.0, in: c, rect: CGRect(x: 1263, y: centerY - 13, width: 104, height: 26), size: 16, color: rowInk)
-            boardText(String(entry.1), in: c, rect: CGRect(x: 1370, y: centerY - 13, width: 30, height: 26),
+            block(c, CGRect(x: 1245, y: centerY - 4, width: 9, height: 9), colors[index])
+            boardText(entry.label, in: c, rect: CGRect(x: 1263, y: centerY - 13, width: 104, height: 26), size: 16, color: rowInk)
+            boardText(String(entry.count), in: c, rect: CGRect(x: 1370, y: centerY - 13, width: 30, height: 26),
                       size: 18, color: rowInk, weight: .medium, alignment: .right)
         }
         c.restoreGState()
@@ -505,10 +492,10 @@ enum FullscreenWorkplaceScene {
         if width < 125 {
             let components = Calendar.current.dateComponents([.month, .day], from: now)
             dateText = "\(components.month ?? 1)月\(components.day ?? 1)日"
-        } else { dateText = dateFormat.string(from: now) }
+        } else { dateText = SceneReadouts.dateText(at: now) }
         boardText(dateText, in: c, rect: CGRect(x:content.minX,y:854,width:width,height:23),
                   size: width < 125 ? 11 : 14)
-        boardText(timeFormat.string(from: now), in: c,
+        boardText(SceneReadouts.timeText(at: now), in: c,
                   rect: CGRect(x:content.minX,y:828,width:width,height:36), size:33, weight:.semibold)
     }
     private static func statusPlaque(_ c: CGContext, snapshot: SceneSnapshot, actionTitle: String? = nil) {

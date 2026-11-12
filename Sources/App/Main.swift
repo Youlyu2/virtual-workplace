@@ -31,7 +31,7 @@ enum VirtualWorkplaceMain {
             let context = value(after: "--context", in: arguments).flatMap(SceneDisplayContext.init(rawValue:)) ?? .desktop
             let report: [String: Any] = ["displays": DisplaySceneRouting.diagnostics(world: world, context: context),
                 "context": context.rawValue,
-                "weather": world.weather.rawValue, "timeMode": world.timeMode.rawValue]
+                "theme": world.theme.rawValue, "weather": world.weather.rawValue, "timeMode": world.timeMode.rawValue]
             if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
                let text = String(data: data, encoding: .utf8) { print(text) }
             return
@@ -81,10 +81,11 @@ enum VirtualWorkplaceMain {
         let mode = EmployeeMode(rawValue: value(after: "--mode", in: arguments) ?? "sitting") ?? .sitting
         let action = value(after: "--action", in: arguments).flatMap(EmployeeAction.init(rawValue:))
         let actionTime = max(0, Double(value(after: "--action-time", in: arguments) ?? "1") ?? 1)
+        let theme = value(after: "--theme", in: arguments).flatMap(WorkplaceTheme.init(rawValue:)) ?? .cabin
         let appDelegate = WorkplaceAppDelegate(stateURL: nil, launchDemo: false)
         do {
             let report = try appDelegate.renderInterface(output: URL(fileURLWithPath: output), size: NSSize(width: width, height: height), taskCount: count, mode: mode,
-                                                        action: action, actionTime: actionTime)
+                                                        action: action, actionTime: actionTime, theme: theme)
             print(report)
             print(output)
         } catch {
@@ -127,7 +128,8 @@ enum VirtualWorkplaceMain {
                         createdAt: now.addingTimeInterval(-(noteAge ?? Double((index + 1) * 420))), slot: index)
         }
         snapshot.world = SceneWorld(weather: value(after: "--weather", in: arguments).flatMap(WorldWeather.init(rawValue:)) ?? .clear,
-                                    timeMode: value(after: "--daylight", in: arguments).flatMap(WorldTimeMode.init(rawValue:)) ?? .automatic)
+                                    timeMode: value(after: "--daylight", in: arguments).flatMap(WorldTimeMode.init(rawValue:)) ?? .automatic,
+                                    theme: value(after: "--theme", in: arguments).flatMap(WorkplaceTheme.init(rawValue:)) ?? .cabin)
         // Explicit render fixtures stay reproducible; --random-weather previews
         // the same absolute-time calendar used by desktop and saver hosts.
         snapshot.world?.weatherMode = arguments.contains("--random-weather") ? .random : .manual

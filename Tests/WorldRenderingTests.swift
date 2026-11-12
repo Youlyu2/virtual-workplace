@@ -11,14 +11,19 @@ import ImageIO
     }
     static func render(_ world: SceneWorld, background: WorkplaceBackground = .outdoors,
                        at date: Date = now, time: Double = 12, reduceMotion: Bool = false,
-                       size: CGSize = size) -> CGContext {
+                       size: CGSize = size, notes: [PendingNote] = [], taskCount: Int = 1,
+                       action: SceneAction? = nil, completedToday: Int = 0, mode: EmployeeMode = .sitting) -> CGContext {
         let c = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
                           bytesPerRow: Int(size.width) * 4, space: CGColorSpaceCreateDeviceRGB(),
                           bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)!
         var snapshot = SceneSnapshot.empty(now: date)
-        snapshot.mode = .sitting; snapshot.world = world
+        snapshot.mode = mode; snapshot.world = world; snapshot.pendingNotes = notes
         snapshot.world?.weatherMode = .manual
-        snapshot.tasks = [WorkplaceTask(id: "fixture", title: "共享世界渲染测试", status: .running, slot: 0)]
+        snapshot.action = action
+        snapshot.completedToday = completedToday
+        snapshot.tasks = (0..<taskCount).map { slot in
+            WorkplaceTask(id: "fixture-\(slot)", title: "共享世界渲染测试", status: .running, slot: slot)
+        }
         SceneRenderer.draw(in: c, bounds: CGRect(origin: .zero, size: size), snapshot: snapshot,
                            time: time, reduceMotion: reduceMotion, now: date, background: background)
         return c
@@ -104,6 +109,90 @@ import ImageIO
             expect(p[3] == 255 && p[(image.width * image.height - 1) * 4 + 3] == 255,
                    "outdoors fills all corners without letterboxing at \(size)")
         }
+        expect(SceneRenderer.hasUnderwaterAssets, "both original underwater scene plates load")
+        let sea = SceneWorld(timeMode: .day, theme: .underwater)
+        let encounter = Date(timeIntervalSinceReferenceDate: 797_760_000 + 18)
+        let shallow = render(sea, background: .room, at: encounter)
+        let deep = render(sea, at: encounter)
+        expect(luminance(shallow, x: 350, y: 450) > 1.5 * luminance(deep, x: 350, y: 450),
+               "the shallow water column is visibly brighter than the deep canyon")
+        let reef = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+                             bytesPerRow: Int(size.width) * 4, space: CGColorSpaceCreateDeviceRGB(),
+                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        UnderwaterWorkplaceScene.draw(in: reef, bounds: CGRect(origin: .zero, size: size), deep: false,
+                                      world: sea, at: encounter, reduceMotion: false)
+        let formerDeck = CGRect(x: 520, y: 185, width: 300, height: 90)
+        expect(hash(reef, rect: formerDeck) == hash(shallow, rect: formerDeck),
+               "the former platform area is now open reef")
+        let submarineArea = CGRect(x: 348, y: 729, width: 315, height: 120)
+        let emptyReef = render(sea, background: .room, at: encounter, taskCount: 0)
+        expect(hash(emptyReef, rect: submarineArea) != hash(shallow, rect: submarineArea),
+               "a real task updates the floating session submarine")
+        let taskInUpperRow = WorkplaceTask(id: "slot-6", title: "扩展会话", status: .running, slot: 5)
+        expect(ShallowDiveScene.submarineSlots(for: []) == [0, 1, 2]
+               && ShallowDiveScene.submarineSlots(for: [taskInUpperRow]) == [0, 1, 2, 5],
+               "the three permanent submarines remain visible even with empty or sparse task slots")
+        let hud = CGRect(x: 805, y: 876, width: 850, height: 60)
+        let stableReef = render(sea, background: .room, at: encounter, reduceMotion: true)
+        let completedReef = render(sea, background: .room, at: encounter, reduceMotion: true, completedToday: 8)
+        let laterReef = render(sea, background: .room, at: encounter.addingTimeInterval(86_460), reduceMotion: true)
+        expect(hash(stableReef, rect: hud) == hash(completedReef, rect: hud),
+               "the shallow header no longer displays a progress counter")
+        expect(hash(stableReef, rect: hud) != hash(laterReef, rect: hud),
+               "the shallow clock and date update even with reduced motion")
+        let clearInterior = CGRect(x: 1577, y: 817, width: 12, height: 8)
+        expect(hash(reef, rect: clearInterior) == hash(shallow, rect: clearInterior),
+               "the clock bubble leaves the reef visible between text and rim")
+        let sampleBubble = CGRect(x: 1528, y: 800, width: 118, height: 118)
+        var dimReef = sea
+        dimReef.timeMode = .night
+        expect(UnderwaterWorkplaceScene.shallowTextIsDark(behind: sampleBubble, in: size, world: sea, at: encounter)
+               != UnderwaterWorkplaceScene.shallowTextIsDark(behind: sampleBubble, in: size, world: dimReef, at: encounter),
+               "the shallow clock switches contrast between bright and dim water")
+        let playing = SceneAction(kind: .playWithCat, startedAt: encounter.addingTimeInterval(-6))
+        let playingReef = render(sea, background: .room, at: encounter, action: playing)
+        let companions = CGRect(x: 550, y: 270, width: 690, height: 350)
+        expect(hash(playingReef, rect: companions) != hash(shallow, rect: companions),
+               "the manual interaction changes both companions' poses and positions")
+        let patrol = render(sea, background: .room, at: encounter, reduceMotion: true, mode: .standing)
+        let paddling = render(sea, background: .room, at: encounter, reduceMotion: true, mode: .slacking)
+        expect(Set([stableReef, patrol, paddling].map { hash($0, rect: companions) }).count == 3,
+               "floating, horizontal patrol, and paddling have distinct diver poses")
+        let beforeRoll = SceneAction(kind: .playWithCat, startedAt: encounter.addingTimeInterval(-4))
+        let sealArea = CGRect(x: 940, y: 295, width: 250, height: 230)
+        expect(hash(render(sea, background: .room, at: encounter, action: beforeRoll), rect: sealArea)
+               != hash(playingReef, rect: sealArea),
+               "the seal rolls during the interaction")
+        let tall = render(sea, background: .room, at: encounter, size: CGSize(width: 800, height: 1200), taskCount: 6)
+        let tallTop = CGRect(x: 80, y: 870, width: 640, height: 210)
+        let tallOne = render(sea, background: .room, at: encounter, size: CGSize(width: 800, height: 1200))
+        expect(hash(tall, rect: tallTop) != hash(tallOne, rect: tallTop),
+               "additional task submarines fit the shallow reef on a portrait screen")
+        var darkSea = sea
+        darkSea.timeMode = .night
+        expect(hash(render(darkSea, at: encounter)) != hash(deep), "water lighting changes the rendered canyon")
+        expect(hash(render(sea, at: encounter.addingTimeInterval(1))) != hash(deep),
+               "the shared clock advances fish, current, and bubbles")
+        let calm = render(sea, at: encounter, reduceMotion: true)
+        expect(hash(render(sea, at: encounter.addingTimeInterval(1), reduceMotion: true)) == hash(calm),
+               "underwater animations respect reduced motion")
+        let notes = [
+            PendingNote(id: "reef-check", text: "检查观测记录", createdAt: encounter.addingTimeInterval(-900), slot: 1),
+            PendingNote(id: "dive-plan", text: "整理下次潜水计划", createdAt: encounter.addingTimeInterval(-1_260), slot: 3)
+        ]
+        let visitors = render(sea, at: encounter, notes: notes)
+        expect(hash(visitors) != hash(deep), "deep sea renders visiting divers and their notes")
+        let overdue = PendingNote(id: "reef-overdue", text: "检查海流传感器",
+                                  createdAt: encounter.addingTimeInterval(-18_000), slot: 1)
+        let storm = render(sea, at: encounter, notes: [overdue])
+        let currentWater = CGRect(x: 600, y: 730, width: 440, height: 130)
+        expect(hash(storm, rect: currentWater) == hash(deep, rect: currentWater),
+               "an overdue note does not affect the independently selected water condition")
+        let depthBadge = CGRect(x: 20, y: 18, width: 348, height: 44)
+        expect(hash(storm, rect: depthBadge) != hash(deep, rect: depthBadge),
+               "an overdue note is indicated in the depth badge")
+        save(shallow, name: "underwater-shallow")
+        save(visitors, name: "underwater-deep")
         print("PASS: \(checks) shared-world atmosphere, clipping, readability and rendering checks")
     }
 }

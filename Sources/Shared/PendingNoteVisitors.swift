@@ -136,27 +136,39 @@ enum PendingNoteVisitors {
         let visitors = placements(notes: notes, bounds: bounds, at: date, reduceMotion: reduceMotion)
         guard !visitors.isEmpty else { return }
         let darkness = CGFloat(world.environment(at: date).darkness)
+        let underwater = world.theme == .underwater
         c.saveGState(); c.clip(to: bounds); c.setShouldAntialias(false); c.interpolationQuality = .none
         // Far feet first, like the rest of the game's flat foreground layers.
         for visitor in visitors.sorted(by: { $0.feet.y > $1.feet.y }) {
             let s = visitor.scale
-            c.setFillColor(WorldAtmosphere.color(0x29372B, alpha: 0.25).cgColor)
-            c.fill(CGRect(x: visitor.feet.x - 25 * s, y: visitor.feet.y - 2 * s,
-                          width: 50 * s, height: 6 * s).integral)
-            // Each visitor needs an isolated tint, not a display-sized backing
-            // surface. Leave generous room for hats and every walking profile.
-            let layerBounds = CGRect(x: visitor.feet.x - visitor.spriteHeight,
-                y: visitor.feet.y - 4 * s, width: visitor.spriteHeight * 2,
-                height: visitor.spriteHeight + 8 * s).integral
+            var feet = visitor.feet
+            if underwater {
+                let seconds = date.timeIntervalSinceReferenceDate
+                let phase = reduceMotion || !seconds.isFinite ? 0 : seconds
+                let bob = sin(phase * 1.6 + Double(visitor.slot)) * 7
+                feet.y += (16 + bob) * s
+            } else {
+                c.setFillColor(WorldAtmosphere.color(0x29372B, alpha: 0.25).cgColor)
+                c.fill(CGRect(x: feet.x - 25 * s, y: feet.y - 2 * s,
+                              width: 50 * s, height: 6 * s).integral)
+            }
+            // Limit the tinted backing surface to the visitor and equipment.
+            let layerBounds = CGRect(x: feet.x - visitor.spriteHeight, y: feet.y - 4 * s,
+                                     width: visitor.spriteHeight * 2, height: visitor.spriteHeight + 8 * s).integral
             c.saveGState(); c.beginTransparencyLayer(in: layerBounds, auxiliaryInfo: nil)
             let drawn = PendingVisitorSprites.draw(in: c, variant: visitor.slot,
                 direction: visitor.motion.direction, distance: visitor.motion.distance,
-                isMoving: visitor.motion.isMoving, feet: visitor.feet, targetHeight: visitor.spriteHeight)
-            if !drawn { fallbackVisitor(in: c, visitor: visitor) }
+                isMoving: visitor.motion.isMoving, feet: feet, targetHeight: visitor.spriteHeight)
+            if !drawn { fallbackVisitor(in: c, visitor: visitor, feet: feet) }
+            if underwater {
+                let rear = visitor.motion.direction == .up
+                UnderwaterWorkplaceScene.gear(in: c, feet: feet, height: visitor.spriteHeight * 0.83,
+                                              tank: rear, scale: s * 0.56, visor: !rear)
+            }
             if darkness > 0.001 {
                 c.setBlendMode(.sourceAtop)
                 c.setFillColor(WorldAtmosphere.color(0x324562, alpha: darkness * 0.38).cgColor)
-                c.fill(visitor.spriteBounds)
+                c.fill(visitor.spriteBounds.offsetBy(dx: 0, dy: feet.y - visitor.feet.y))
             }
             c.endTransparencyLayer(); c.restoreGState()
             drawBubble(in: c, visitor: visitor)
@@ -164,8 +176,8 @@ enum PendingNoteVisitors {
         c.restoreGState()
     }
 
-    private static func fallbackVisitor(in c: CGContext, visitor: Placement) {
-        let s = visitor.spriteHeight / 88, x = visitor.feet.x, y = visitor.feet.y
+    private static func fallbackVisitor(in c: CGContext, visitor: Placement, feet: CGPoint) {
+        let s = visitor.spriteHeight / 88, x = feet.x, y = feet.y
         c.setFillColor(WorldAtmosphere.color(0x342B25).cgColor)
         c.fill(CGRect(x: x - 14 * s, y: y, width: 10 * s, height: 28 * s))
         c.fill(CGRect(x: x + 4 * s, y: y, width: 10 * s, height: 28 * s))

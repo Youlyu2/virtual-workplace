@@ -77,6 +77,9 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private var addButton: NSButton!
     private var undoButton: NSButton!
+    private var theme: WorkplaceTheme = .cabin
+    private var panelHeading: NSTextField?
+    private var previewHeading: NSTextField?
     private var notes: [PendingNote] = []
     private var hasRenderedRows = false
     private var waitingLabels: [String: NSTextField] = [:]
@@ -128,6 +131,14 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
     /// Heartbeats refresh waiting labels and the actual exterior preview, but
     /// do not replace rows or editable controls unless note content changes.
     func update(snapshot: SceneSnapshot, error: String?, canUndo: Bool) {
+        let nextTheme = snapshot.world?.theme ?? .cabin
+        let themeChanged = theme != nextTheme
+        theme = nextTheme
+        if themeChanged {
+            window?.title = theme.notesTitle
+            panelHeading?.stringValue = theme.notesTitle
+            previewHeading?.stringValue = theme == .underwater ? "深海实景" : "门外实景"
+        }
         preview.snapshot = snapshot
         refreshWeather(snapshot: snapshot, at: Date())
         self.canUndo = canUndo
@@ -137,7 +148,7 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
             pendingDraft = nil
         }
         let updated = snapshot.pendingNotes ?? []
-        if !hasRenderedRows || notes != updated {
+        if !hasRenderedRows || notes != updated || (themeChanged && updated.isEmpty) {
             notes = updated
             rebuildRows()
             hasRenderedRows = true
@@ -198,6 +209,7 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
         root.layer?.backgroundColor = window.backgroundColor.cgColor
         window.contentView = root
         let title = label("门外待办", size: 25, weight: .semibold)
+        panelHeading = title
         let explanation = label("写下还没交办的事，让访客替你记着。最多 8 位访客，每条最多 2000 字。", size: 13, color: Self.muted)
         [title, explanation].forEach { $0.translatesAutoresizingMaskIntoConstraints = false; root.addSubview($0) }
 
@@ -223,7 +235,9 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
             right.topAnchor.constraint(equalTo: left.topAnchor),
             right.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -112)
         ])
-        left.addArrangedSubview(label("门外实景", size: 14, weight: .semibold))
+        let previewTitle = label("门外实景", size: 14, weight: .semibold)
+        previewHeading = previewTitle
+        left.addArrangedSubview(previewTitle)
         preview.identifier = NSUserInterfaceItemIdentifier("pending-notes-preview")
         preview.background = .outdoors
         preview.viewport = .companion(for: .outdoors)
@@ -341,7 +355,8 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
         for view in rows.arrangedSubviews { rows.removeArrangedSubview(view); view.removeFromSuperview() }
         waitingLabels.removeAll()
         if notes.isEmpty {
-            let empty = label("门外还没有访客。\n写一条便签，把暂时没交办的事放在这里。", size: 14, color: Self.muted)
+            let place = theme == .underwater ? "海中" : "门外"
+            let empty = label("\(place)还没有访客。\n写一条便签，把暂时没交办的事放在这里。", size: 14, color: Self.muted)
             empty.identifier = NSUserInterfaceItemIdentifier("pending-note-empty")
             rows.addArrangedSubview(empty)
             empty.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
@@ -388,7 +403,8 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
     private func addDraft() {
         guard pendingDraft == nil else { return }
         guard notes.count < PendingNote.maximumCount else {
-            setMessage("门外已有 8 位访客，请先交办一条便签。", error: true); return
+            let place = theme == .underwater ? "海中" : "门外"
+            setMessage("\(place)已有 8 位访客，请先交办一条便签。", error: true); return
         }
         do {
             let text = try PendingNote.normalizedText(input.string)
@@ -439,12 +455,14 @@ final class PendingNotesPanelController: NSWindowController, NSTextViewDelegate,
     private func refreshWeather(snapshot: SceneSnapshot, at date: Date) {
         let world = snapshot.world ?? SceneWorld()
         let weather = snapshot.effectiveWorld(at: date).weather
+        let condition = world.theme == .underwater ? "海况" : "天气"
+        let title = world.theme.title(for: weather)
         let text: String
         switch world.weatherMode {
         case .random:
-            text = "当前天气：\(weather.title) · 随机轮换\n天气独立变化，不受待办等待时长影响。"
+            text = "当前\(condition)：\(title) · 随机轮换\n\(condition)独立变化，不受待办等待时长影响。"
         case .manual:
-            text = "当前天气：\(weather.title) · 手动固定\n天气保持你的选择，不受待办等待时长影响。"
+            text = "当前\(condition)：\(title) · 手动固定\n\(condition)保持你的选择，不受待办等待时长影响。"
         }
         if weatherLabel.stringValue != text { weatherLabel.stringValue = text }
         weatherLabel.toolTip = text

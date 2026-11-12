@@ -209,6 +209,23 @@ enum ScreenSceneSettingsTests {
             weatherSnapshot.pendingNotes = [overdue]
             try controller.renderPreview(to: URL(fileURLWithPath: CommandLine.arguments[index + 1]), snapshot: weatherSnapshot)
         }
+        let theme = control("scene-theme", in: root, as: NSSegmentedControl.self)
+        let beforeTheme = changes.last!
+        controller.update(world: beforeTheme)
+        theme.selectedSegment = 1; send(theme)
+        expect(changes.last?.theme == .underwater
+               && changes.last?.displayScenes == beforeTheme.displayScenes
+               && changes.last?.screenSaverDisplayScenes == beforeTheme.screenSaverDisplayScenes,
+               "the underwater theme preserves each context's saved display assignments")
+        expect(weather.selectedItem?.title == WorkplaceTheme.underwater.title(for: beforeTheme.weather)
+               && weatherStatus.stringValue.contains("强海流"),
+               "underwater settings use water conditions and retain the base preset")
+        if let first = displays.first {
+            expect(background(first.id).itemTitles == ["浅海", "深海"],
+                   "underwater backgrounds are selectable by depth")
+        }
+        theme.selectedSegment = 0; send(theme)
+        expect(changes.last == beforeTheme, "switching back restores the original theme and settings")
         controller.close()
         print("PASS: \(checks) native screen settings construction and layout checks (no visible windows or state writes)")
     }

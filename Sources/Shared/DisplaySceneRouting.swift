@@ -55,8 +55,21 @@ enum DisplaySceneRouting {
     static func viewport(for display: DisplaySceneDescriptor,
                          among displays: [DisplaySceneDescriptor], world: SceneWorld = SceneWorld(),
                          context: SceneDisplayContext = .desktop) -> WorldViewport? {
-        WorldViewport.make(display: display.frame, among: displays.map(\.frame),
-                           seams: seams(among: displays, world: world, context: context))
+        let offset = animationOffset(for: display, among: displays, world: world, context: context)
+        return WorldViewport.make(display: display.frame, among: displays.map(\.frame),
+                                  seams: seams(among: displays, world: world, context: context),
+                                  animationOffset: offset)
+    }
+
+    // Animation offsets belong to the active scene group, while the saved
+    // choices, wall clock and pending-note ages keep their actual values.
+    private static func animationOffset(for display: DisplaySceneDescriptor, among displays: [DisplaySceneDescriptor],
+                                        world: SceneWorld, context: SceneDisplayContext) -> TimeInterval {
+        guard world.theme == .underwater else { return 0 }
+        let selected = background(for: display, among: displays, world: world, context: context)
+        let peers = displays.filter { background(for: $0, among: displays, world: world, context: context) == selected }
+            .sorted { a, b in a.isMain == b.isMain ? a.id < b.id : a.isMain }
+        return Double(peers.firstIndex(where: { $0.id == display.id }) ?? 0) * 37
     }
 
     /// Only touching outdoor/room screens need a foreground connection. Every
@@ -140,6 +153,7 @@ enum DisplaySceneRouting {
              "context": context.rawValue,
              "background": background(for: display, among: displays, world: world, context: context).rawValue,
              "hasExplicitChoice": world.displayScenes(for: context)[display.id] != nil,
+             "animationOffset": camera?.animationOffset ?? 0,
              "worldCanvas": camera.map { [$0.canvas.minX, $0.canvas.minY, $0.canvas.width, $0.canvas.height] } ?? [],
              "worldSeams": camera?.seams.map { ["x": $0.boundaryX, "lowerY": $0.lowerY,
                                                   "upperY": $0.upperY, "roomOnRight": $0.roomOnRight] as [String: Any] } ?? [],

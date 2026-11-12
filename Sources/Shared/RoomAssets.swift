@@ -11,6 +11,8 @@ enum RoomAssets {
     /// layers must never be covered by patches from the older perspective art.
     static var usesFlatForeground: Bool { flatBackground != nil }
     static let background = flatBackground ?? load("cabin-background")
+    static let shallowSea = load("underwater-shallow")
+    static let deepSea = load("underwater-deep")
     static let outdoors = load("outdoor-landscape")
     static let panorama = usesFlatForeground
         ? load("flat-distant-panorama") ?? load("outdoor-panorama") : load("outdoor-panorama")

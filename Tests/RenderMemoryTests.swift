@@ -87,6 +87,7 @@ import Darwin
         let background: WorkplaceBackground = args.contains("--room") ? .room : .outdoors
         let animation = SceneAnimation()
         var snapshot = fixture()
+        if args.contains("--underwater") { snapshot.world?.theme = .underwater }
         let began = ProcessInfo.processInfo.systemUptime, cpuBegan = clock()
         var samples: [(Int, UInt64, UInt64)] = []
         for frame in 0..<frames {

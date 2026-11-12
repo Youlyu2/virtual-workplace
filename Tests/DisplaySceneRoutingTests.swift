@@ -158,6 +158,19 @@ enum DisplaySceneRoutingTests {
         expect(DisplaySceneRouting.background(for: left, among: [left], world: onlyDesktopOverride) == .outdoors
                && DisplaySceneRouting.background(for: left, among: [left], world: onlyDesktopOverride, context: .screenSaver) == .room,
             "one-context explicit choices do not leak across contexts on a single monitor")
+        let ocean = SceneWorld(theme: .underwater)
+        let oceanDesktop = triple.compactMap { DisplaySceneRouting.viewport(for: $0, among: triple, world: ocean) }
+        expect(Set(oceanDesktop.map(\.animationOffset)) == [0, 37, 74],
+            "three monitors showing the same shallow reef use distinct animation phases")
+        let oceanSaver = triple.compactMap {
+            DisplaySceneRouting.viewport(for: $0, among: triple, world: ocean, context: .screenSaver)
+        }
+        expect(oceanSaver.map(\.animationOffset) == [37, 0, 0],
+            "only the repeated deep scene receives an offset in the saver layout")
+        expect(DisplaySceneRouting.viewport(for: right, among: [left, right, main], world: ocean) == oceanDesktop[0],
+            "monitor inventory order cannot shift the animation timeline")
+        expect(DisplaySceneRouting.viewport(for: main, among: [main], world: ocean)?.animationOffset == 0,
+            "a single display uses the original animation timeline")
         print("PASS: \(checks) display scene routing checks (synthetic monitors only)")
     }
 }

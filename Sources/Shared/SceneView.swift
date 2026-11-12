@@ -59,7 +59,18 @@ final class WorkplaceSceneView: NSView {
     }
     private func updateSceneAccessibility() {
         let world = snapshot.effectiveWorld(at: Date())
-        if background == .outdoors {
+        let theme = world.theme
+        if theme == .underwater {
+            let title = theme.title(for: background)
+            let condition = theme.title(for: world.weather)
+            if background == .outdoors {
+                let count = snapshot.pendingNotes?.count ?? 0
+                setAccessibilityValue("\(title)，\(condition)，\(count) 位访客等待交办")
+            } else {
+                let action = snapshot.action.flatMap { $0.isActive() ? "，正在\(theme.title(for: $0.kind))" : nil } ?? ""
+                setAccessibilityValue("\(title)潜游，\(condition)，\(snapshot.tasks.count) 艘任务潜水艇\(action)")
+            }
+        } else if background == .outdoors {
             let notes = snapshot.pendingNotes ?? []
             let waiting = notes.isEmpty ? "门外暂无待办" : "\(notes.count) 位访客等待交办"
             setAccessibilityValue("窗外风景，\(world.weather.title)，\(world.environment(at: Date()).title)，\(waiting)")
